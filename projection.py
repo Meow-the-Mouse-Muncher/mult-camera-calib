@@ -65,38 +65,58 @@ def main():
     
     # 为每个EVENT像素位置计算投影映射
     print("计算投影映射...")
-    y_coords, x_coords = np.meshgrid(np.arange(event_h), np.arange(event_w), indexing='ij')
-    
+
     # 创建映射数组
     map_x = np.zeros((event_h, event_w), dtype=np.float32)
     map_y = np.zeros((event_h, event_w), dtype=np.float32)
-    
-    # 计算EVENT到FLIR的映射
-    for y in tqdm(range(event_h)):
-        for x in range(event_w):
-            # 将EVENT像素反投影到3D (归一化坐标)
-            x_norm = (x - K_event[0, 2]) / K_event[0, 0]
-            y_norm = (y - K_event[1, 2]) / K_event[1, 1]
-            
-            # 3D点在EVENT坐标系
-            X_event = np.array([x_norm * Z, y_norm * Z, Z]).reshape(3, 1)
-            
-            # 从EVENT坐标系转换到FLIR坐标系
-            X_flir = np.matmul(R_f2e.T, X_event - T_f2e)
-            
-            # 投影到FLIR图像平面
-            if X_flir[2] > 0:  # 确保点在相机前方
-                u_flir = K_flir[0, 0] * (X_flir[0] / X_flir[2]) + K_flir[0, 2]
-                v_flir = K_flir[1, 1] * (X_flir[1] / X_flir[2]) + K_flir[1, 2]
-                
-                map_x[y, x] = u_flir
-                map_y[y, x] = v_flir
-    
+
+    # 创建坐标网格
+    y_coords, x_coords = np.meshgrid(np.arange(event_h), np.arange(event_w), indexing='ij')
+
+    # 归一化坐标
+    x_norm = (x_coords - K_event[0, 2]) / K_event[0, 0]
+    y_norm = (y_coords - K_event[1, 2]) / K_event[1, 1]
+
+    # 创建3D点
+    points_3d = np.dstack([x_norm * Z, y_norm * Z, np.ones_like(x_norm) * Z])  # [h, w, 3]
+
+    # 从EVENT到FLIR坐标变换的函数
+    def transform_point(point):
+        X_event = point.reshape(3, 1)
+        X_flir = np.matmul(R_f2e.T, X_event - T_f2e.reshape(3, 1))
+        return X_flir
+
+    # 向量化操作应用变换（使用numpy的apply_along_axis）
+    transformed_points = np.apply_along_axis(transform_point, 2, points_3d)  # [h, w, 3, 1]
+
+    # 提取Z值并创建掩码
+    z_values = transformed_points[:, :, 2, 0]
+    valid_mask = z_values > 0
+
+    # 计算投影坐标
+    u_coords = np.zeros_like(x_coords, dtype=np.float32)
+    v_coords = np.zeros_like(y_coords, dtype=np.float32)
+
+    u_coords[valid_mask] = K_flir[0, 0] * (transformed_points[valid_mask][:, 0, 0] / z_values[valid_mask]) + K_flir[0, 2]
+    v_coords[valid_mask] = K_flir[1, 1] * (transformed_points[valid_mask][:, 1, 0] / z_values[valid_mask]) + K_flir[1, 2]
+
+    # 填充映射
+    map_x[valid_mask] = u_coords[valid_mask]
+    map_y[valid_mask] = v_coords[valid_mask]
+
     # 计算位移场 (对于DCN需要的是位移而不是绝对坐标)
-    base_x, base_y = np.meshgrid(np.arange(event_w), np.arange(event_h))
-    flow_x = map_x - base_x.T  # 注意转置以匹配y_coords, x_coords的indexing='ij'
-    flow_y = map_y - base_y.T
-    
+    # 注意：我们需要确保base_x和base_y的索引顺序与map_x和map_y一致
+    # y_coords和x_coords使用了indexing='ij'
+    base_y, base_x = np.meshgrid(np.arange(event_h), np.arange(event_w), indexing='ij')
+    flow_x = map_x - base_x  # 不需要转置，因为使用相同的索引顺序
+    flow_y = map_y - base_y
+
+    # 保存映射和流场以便调试（可选）
+    np.save('Outputs/map_x.npy', map_x)
+    np.save('Outputs/map_y.npy', map_y)
+    np.save('Outputs/flow_x.npy', flow_x)
+    np.save('Outputs/flow_y.npy', flow_y)
+
     # 处理每张FLIR图像
     for i, flir_file in enumerate(flir_files):
         print(f"处理图像 {i+1}/{len(flir_files)}: {os.path.basename(flir_file)}")
@@ -119,12 +139,13 @@ def main():
         warped_img = warped_tensor.squeeze().permute(1, 2, 0).numpy().astype(np.uint8)
         
         # 创建有效区域掩码 (去除超出范围的像素)
-        valid_mask = ((map_x >= 0) & (map_x < I_flir.shape[1]) & 
+        # 为避免与之前的valid_mask混淆，这里重命名为projection_mask
+        projection_mask = ((map_x >= 0) & (map_x < I_flir.shape[1]) & 
                       (map_y >= 0) & (map_y < I_flir.shape[0]))
-        valid_mask = valid_mask.astype(np.uint8) * 255
+        projection_mask = projection_mask.astype(np.uint8) * 255
         
         # 应用掩码
-        result_img = cv2.bitwise_and(warped_img, warped_img, mask=valid_mask)
+        result_img = cv2.bitwise_and(warped_img, warped_img, mask=projection_mask)
         
         # 获取文件名（不包含路径和扩展名）
         base_name = os.path.splitext(os.path.basename(flir_file))[0]
@@ -140,11 +161,8 @@ def main():
         plt.title(f'FLIR与投影结果叠加 - {base_name}')
         plt.savefig(f'Outputs/overlay/overlay_{base_name}.png', bbox_inches='tight')
         plt.close()
-    
+
     print("\n处理完成！结果已保存到 Outputs 文件夹:")
     
-    
-
-
 if __name__ == "__main__":
     main()
