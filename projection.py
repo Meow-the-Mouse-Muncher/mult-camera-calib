@@ -140,10 +140,21 @@ def main():
         # 去畸变
         I_flir_undist = undistort_image(I_flir, K_flir, dist_flir)
         
+        # 获取FLIR图像的实际尺寸
+        flir_h, flir_w = I_flir_undist.shape
+        
+        # 调整位移场大小以匹配FLIR图像
+        flow_x_resized = cv2.resize(flow_x, (flir_w, flir_h), interpolation=cv2.INTER_LINEAR)
+        flow_y_resized = cv2.resize(flow_y, (flir_w, flir_h), interpolation=cv2.INTER_LINEAR)
+        
+        # 根据尺寸比例缩放位移值
+        flow_x_resized = flow_x_resized * (flir_w / event_w)
+        flow_y_resized = flow_y_resized * (flir_h / event_h)
+        
         # 准备输入tensor (灰度图为单通道，不需要permute通道维度)
         I_flir_tensor = torch.from_numpy(I_flir_undist).float().unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
-        flow_x_tensor = torch.from_numpy(flow_x).float().unsqueeze(0).unsqueeze(0)
-        flow_y_tensor = torch.from_numpy(flow_y).float().unsqueeze(0).unsqueeze(0)
+        flow_x_tensor = torch.from_numpy(flow_x_resized).float().unsqueeze(0).unsqueeze(0)
+        flow_y_tensor = torch.from_numpy(flow_y_resized).float().unsqueeze(0).unsqueeze(0)
         
         # 使用DCN进行变形
         warped_tensor = dcn_warp(I_flir_tensor, flow_x_tensor, flow_y_tensor)
