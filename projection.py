@@ -21,7 +21,7 @@ def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
     flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,1,2,H,W]
     flow = flow.reshape(bs, c * 2, H, W)  # [bs,2,H,W]
     # 单位矩阵权重
-    weight = torch.eye(c, device=flow.device).double().reshape(c, c, 1, 1)
+    weight = torch.eye(c, device=flow.device).to(torch.float32).reshape(c, c, 1, 1)
     return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,1,H,W]
 # def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
 #     # voxelgrid: [bs,ts,H,W] | flow: [bs,ts,H,W]
@@ -155,20 +155,28 @@ def main():
         I_flir_tensor = torch.from_numpy(I_flir_undist).float().unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
         flow_x_tensor = torch.from_numpy(flow_x_resized).float().unsqueeze(0).unsqueeze(0)
         flow_y_tensor = torch.from_numpy(flow_y_resized).float().unsqueeze(0).unsqueeze(0)
-        
+        I_flir_tensor = I_flir_tensor.to(torch.float32)
+        flow_x_tensor = flow_x_tensor.to(torch.float32)
+        flow_y_tensor = flow_y_tensor.to(torch.float32)
         # 使用DCN进行变形
         warped_tensor = dcn_warp(I_flir_tensor, flow_x_tensor, flow_y_tensor)
         
         # 转回numpy格式 (单通道图像不需要permute)
         warped_img = warped_tensor.squeeze().numpy().astype(np.uint8)
         
-        # 创建有效区域掩码
+        # 创建有效区域掩码并调整尺寸以匹配warped_img
         projection_mask = ((map_x >= 0) & (map_x < I_flir.shape[1]) & 
-                      (map_y >= 0) & (map_y < I_flir.shape[0]))
+                          (map_y >= 0) & (map_y < I_flir.shape[0]))
         projection_mask = projection_mask.astype(np.uint8) * 255
-        
-        # 应用掩码
-        result_img = cv2.bitwise_and(warped_img, warped_img, mask=projection_mask)
+
+        # 调整掩码大小以匹配warped_img
+        projection_mask_resized = cv2.resize(projection_mask, 
+                                           (warped_img.shape[1], warped_img.shape[0]),
+                                           interpolation=cv2.INTER_NEAREST)
+
+        # 应用调整后的掩码
+        result_img = cv2.bitwise_and(warped_img, warped_img, 
+                                    mask=projection_mask_resized)
         
         # 获取文件名（不包含路径和扩展名）
         base_name = os.path.splitext(os.path.basename(flir_file))[0]
