@@ -60,7 +60,6 @@ def main():
     R_f2e = np.matmul(R_event, R_flir.T)
     T_f2e = T_event - np.matmul(np.matmul(R_event, R_flir.T), T_flir)
     event_h, event_w = 600,600
-    
     # 设置投影平面Z值 (可调整)
     Z = 1
     
@@ -80,7 +79,7 @@ def main():
             y_norm = (y - K_event[1, 2]) / K_event[1, 1]
             
             # 3D点在EVENT坐标系
-            X_event = np.array([x_norm * Z, y_norm * Z, Z])
+            X_event = np.array([x_norm * Z, y_norm * Z, Z]).reshape(3, 1)
             
             # 从EVENT坐标系转换到FLIR坐标系
             X_flir = np.matmul(R_f2e.T, X_event - T_f2e)
@@ -109,7 +108,7 @@ def main():
         I_flir_undist = undistort_image(I_flir, K_flir, dist_flir)
         
         # 准备输入tensor
-        I_flir_tensor = torch.from_numpy(I_flir_undist).permute(2, 0, 1).float().unsqueeze(0).unsqueeze(0)
+        I_flir_tensor = torch.from_numpy(I_flir_undist).permute(2, 0, 1).float().unsqueeze(0)  # [1, 3, H, W]
         flow_x_tensor = torch.from_numpy(flow_x).float().unsqueeze(0).unsqueeze(0)
         flow_y_tensor = torch.from_numpy(flow_y).float().unsqueeze(0).unsqueeze(0)
         
