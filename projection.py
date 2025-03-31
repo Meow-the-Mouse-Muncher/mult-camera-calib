@@ -12,14 +12,26 @@ from torch import Tensor
 import torchvision
 
 def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
-    # voxelgrid: [bs,ts,H,W] | flow: [bs,ts,H,W]
-    bs, ts, H, W = voxelgrid.shape
-    flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,ts,2,H,W]
-    flow = flow.reshape(bs, ts * 2, H, W)  # [bs,ts*2,H,W]
-    #  单位矩阵 保证了 只对一张图处理
-    weight = torch.eye(ts, device=flow.device).double().reshape(ts, ts, 1, 1)  # 返回 ts 张图 对ts张图做处理
-    # 单位卷积核
-    return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,ts,H,W]
+    """
+    对灰度图进行变形
+    voxelgrid: [bs,1,H,W] - 单通道灰度图
+    flow_x/flow_y: [bs,1,H,W] - 位移场
+    """
+    bs, c, H, W = voxelgrid.shape
+    flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,1,2,H,W]
+    flow = flow.reshape(bs, c * 2, H, W)  # [bs,2,H,W]
+    # 单位矩阵权重
+    weight = torch.eye(c, device=flow.device).double().reshape(c, c, 1, 1)
+    return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,1,H,W]
+# def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
+#     # voxelgrid: [bs,ts,H,W] | flow: [bs,ts,H,W]
+#     bs, ts, H, W = voxelgrid.shape
+#     flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,ts,2,H,W]
+#     flow = flow.reshape(bs, ts * 2, H, W)  # [bs,ts*2,H,W]
+#     #  单位矩阵 保证了 只对一张图处理
+#     weight = torch.eye(ts, device=flow.device).double().reshape(ts, ts, 1, 1)  # 返回 ts 张图 对ts张图做处理
+#     # 单位卷积核
+#     return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,ts,H,W]
 
 def undistort_image(img, K, dist_coeffs):
     """
@@ -121,25 +133,25 @@ def main():
     for i, flir_file in enumerate(flir_files):
         print(f"处理图像 {i+1}/{len(flir_files)}: {os.path.basename(flir_file)}")
         
-        # 读取FLIR图像
-        I_flir = cv2.imread(flir_file)
+        # 读取FLIR图像为灰度图
+        I_flir_color = cv2.imread(flir_file)  # 保留彩色版本用于叠加显示
+        I_flir = cv2.imread(flir_file, cv2.IMREAD_GRAYSCALE)  # 灰度图
         
         # 去畸变
         I_flir_undist = undistort_image(I_flir, K_flir, dist_flir)
         
-        # 准备输入tensor
-        I_flir_tensor = torch.from_numpy(I_flir_undist).permute(2, 0, 1).float().unsqueeze(0)  # [1, 3, H, W]
+        # 准备输入tensor (灰度图为单通道，不需要permute通道维度)
+        I_flir_tensor = torch.from_numpy(I_flir_undist).float().unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
         flow_x_tensor = torch.from_numpy(flow_x).float().unsqueeze(0).unsqueeze(0)
         flow_y_tensor = torch.from_numpy(flow_y).float().unsqueeze(0).unsqueeze(0)
         
         # 使用DCN进行变形
         warped_tensor = dcn_warp(I_flir_tensor, flow_x_tensor, flow_y_tensor)
         
-        # 转回numpy格式
-        warped_img = warped_tensor.squeeze().permute(1, 2, 0).numpy().astype(np.uint8)
+        # 转回numpy格式 (单通道图像不需要permute)
+        warped_img = warped_tensor.squeeze().numpy().astype(np.uint8)
         
-        # 创建有效区域掩码 (去除超出范围的像素)
-        # 为避免与之前的valid_mask混淆，这里重命名为projection_mask
+        # 创建有效区域掩码
         projection_mask = ((map_x >= 0) & (map_x < I_flir.shape[1]) & 
                       (map_y >= 0) & (map_y < I_flir.shape[0]))
         projection_mask = projection_mask.astype(np.uint8) * 255
@@ -153,10 +165,13 @@ def main():
         # 保存结果
         cv2.imwrite(f'Outputs/flir/flir_in_event_view_{base_name}.png', result_img)
         
+        # 创建彩色显示版本（应用热力图颜色映射）
+        result_img_color = cv2.applyColorMap(result_img, cv2.COLORMAP_JET)
+        
         # 创建并保存重叠图像 (使用matplotlib)
         plt.figure(figsize=(10, 8))
-        plt.imshow(cv2.cvtColor(I_flir, cv2.COLOR_BGR2RGB))
-        plt.imshow(cv2.cvtColor(result_img, cv2.COLOR_BGR2RGB), alpha=0.5)
+        plt.imshow(cv2.cvtColor(I_flir_color, cv2.COLOR_BGR2RGB))
+        plt.imshow(cv2.cvtColor(result_img_color, cv2.COLOR_BGR2RGB), alpha=0.5)
         plt.axis('off')
         plt.title(f'FLIR与投影结果叠加 - {base_name}')
         plt.savefig(f'Outputs/overlay/overlay_{base_name}.png', bbox_inches='tight')
