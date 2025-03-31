@@ -52,7 +52,9 @@ def main():
     
     # 提取相机内参和畸变系数
     K_flir = stereo_params['K2'][0, 0]  # flir相机内参
+    K_flir_inv = np.linalg.inv(K_flir)  # flir相机逆内参
     K_event = stereo_params['K1'][0, 0]  # event相机内参
+    K_event_inv = np.linalg.inv(K_event)  # event相机逆内参
     dist_flir = np.hstack([
         stereo_params['RadialDistortion2'][0, 0].flatten(), 
         stereo_params['TangentialDistortion2'][0, 0].flatten()
@@ -70,94 +72,65 @@ def main():
     # 获取所有图像文件
     flir_files = sorted(glob.glob('flir_result/*.png'))
     R_f2e = np.matmul(R_event, R_flir.T)
+    # 单位是mm 
     T_f2e = T_event - np.matmul(np.matmul(R_event, R_flir.T), T_flir)
-    event_h, event_w = 600,600
-    # 设置投影平面Z值 (可调整)
-    Z = 1
     
-    # 为每个EVENT像素位置计算投影映射
+    flir_h, flir_w = 1800,1800
+    # 设置投影平面Z值 默认1
+    # Z = 1
+    
     print("计算投影映射...")
-
-    # 创建映射数组
-    map_x = np.zeros((event_h, event_w), dtype=np.float32)
-    map_y = np.zeros((event_h, event_w), dtype=np.float32)
-
-    # 创建坐标网格
-    y_coords, x_coords = np.meshgrid(np.arange(event_h), np.arange(event_w), indexing='ij')
-
-    # 归一化坐标
-    x_norm = (x_coords - K_event[0, 2]) / K_event[0, 0]
-    y_norm = (y_coords - K_event[1, 2]) / K_event[1, 1]
-
-    # 创建3D点
-    points_3d = np.dstack([x_norm * Z, y_norm * Z, np.ones_like(x_norm) * Z])  # [h, w, 3]
-
-    # 从EVENT到FLIR坐标变换的函数
-    def transform_point(point):
-        X_event = point.reshape(3, 1)
-        X_flir = np.matmul(R_f2e.T, X_event - T_f2e.reshape(3, 1))
-        return X_flir
-
-    # 向量化操作应用变换（使用numpy的apply_along_axis）
-    transformed_points = np.apply_along_axis(transform_point, 2, points_3d)  # [h, w, 3, 1]
-
-    # 提取Z值并创建掩码
-    z_values = transformed_points[:, :, 2, 0]
-    valid_mask = z_values > 0
-
-    # 计算投影坐标
-    u_coords = np.zeros_like(x_coords, dtype=np.float32)
-    v_coords = np.zeros_like(y_coords, dtype=np.float32)
-
-    u_coords[valid_mask] = K_flir[0, 0] * (transformed_points[valid_mask][:, 0, 0] / z_values[valid_mask]) + K_flir[0, 2]
-    v_coords[valid_mask] = K_flir[1, 1] * (transformed_points[valid_mask][:, 1, 0] / z_values[valid_mask]) + K_flir[1, 2]
-
-    # 填充映射
-    map_x[valid_mask] = u_coords[valid_mask]
-    map_y[valid_mask] = v_coords[valid_mask]
-
+    # 创建坐标网格 先横后竖 xy
+    x_coords,y_coords = np.meshgrid(np.arange(flir_w), np.arange(flir_h))
+    
+    # 创建均匀坐标 [3, h*w]
+    flir_pixels = np.stack([x_coords.flatten(), y_coords.flatten(), np.ones_like(x_coords.flatten())], axis=0)
+    
+    # 使用内参矩阵的逆矩阵将像素坐标转换为归一化相机坐标
+    flir_rays = np.matmul(K_event_inv, flir_pixels)  # [3, h*w]
+    
+    # 将flir相机坐标系中的射线转换到event相机坐标系
+    flir_rays = np.matmul(R_f2e, flir_rays) + T_f2e # [3, h*w]
+    # 使用内参矩阵将3d坐标转换为像素坐标
+    flir_rays = np.matmul(K_event, flir_rays)  # [3, h*w]
+    # 进行归一化 f2e_pixels->u v 1
+    f2e_pixels = np.zeros_like(flir_pixels)
+    # 0-x 1-y 2-z
+    f2e_pixels[0, :] = flir_rays[0, :] / flir_rays[2, :]
+    f2e_pixels[1, :] = flir_rays[1, :] / flir_rays[2, :]
+    # 重塑回原始形状
+    map_x = f2e_pixels[0, :].reshape(flir_h, flir_w)
+    map_y = f2e_pixels[1, :].reshape(flir_h, flir_w)
+    
     # 计算位移场 (对于DCN需要的是位移而不是绝对坐标)
-    # 注意：我们需要确保base_x和base_y的索引顺序与map_x和map_y一致
-    # y_coords和x_coords使用了indexing='ij'
-    base_y, base_x = np.meshgrid(np.arange(event_h), np.arange(event_w), indexing='ij')
-    flow_x = map_x - base_x  # 不需要转置，因为使用相同的索引顺序
-    flow_y = map_y - base_y
-
-    # 保存映射和流场以便调试（可选）
-    np.save('Outputs/map_x.npy', map_x)
-    np.save('Outputs/map_y.npy', map_y)
-    np.save('Outputs/flow_x.npy', flow_x)
-    np.save('Outputs/flow_y.npy', flow_y)
-
+    flow_x = map_x - x_coords
+    flow_y = map_y - y_coords
+    
     # 处理每张FLIR图像
     for i, flir_file in enumerate(flir_files):
         print(f"处理图像 {i+1}/{len(flir_files)}: {os.path.basename(flir_file)}")
         
         # 读取FLIR图像为灰度图
-        I_flir_color = cv2.imread(flir_file)  # 保留彩色版本用于叠加显示
         I_flir = cv2.imread(flir_file, cv2.IMREAD_GRAYSCALE)  # 灰度图
         
-        # 去畸变
-        I_flir_undist = undistort_image(I_flir, K_flir, dist_flir)
+        # # 去畸变
+        # I_flir_undist = undistort_image(I_flir, K_flir, dist_flir)
         
-        # 获取FLIR图像的实际尺寸
-        flir_h, flir_w = I_flir_undist.shape
+        # # 获取FLIR图像的实际尺寸
+        # flir_h, flir_w = I_flir_undist.shape
         
-        # 调整位移场大小以匹配FLIR图像
-        flow_x_resized = cv2.resize(flow_x, (flir_w, flir_h), interpolation=cv2.INTER_LINEAR)
-        flow_y_resized = cv2.resize(flow_y, (flir_w, flir_h), interpolation=cv2.INTER_LINEAR)
+        # # 调整位移场大小以匹配FLIR图像
+        # flow_x_resized = cv2.resize(flow_x, (flir_w, flir_h), interpolation=cv2.INTER_LINEAR)
+        # flow_y_resized = cv2.resize(flow_y, (flir_w, flir_h), interpolation=cv2.INTER_LINEAR)
         
-        # 根据尺寸比例缩放位移值
-        flow_x_resized = flow_x_resized * (flir_w / event_w)
-        flow_y_resized = flow_y_resized * (flir_h / event_h)
+        # # 根据尺寸比例缩放位移值
+        # flow_x_resized = flow_x_resized * (flir_w / flir_w)
+        # flow_y_resized = flow_y_resized * (flir_h / flir_h)
         
         # 准备输入tensor (灰度图为单通道，不需要permute通道维度)
-        I_flir_tensor = torch.from_numpy(I_flir_undist).float().unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
-        flow_x_tensor = torch.from_numpy(flow_x_resized).float().unsqueeze(0).unsqueeze(0)
-        flow_y_tensor = torch.from_numpy(flow_y_resized).float().unsqueeze(0).unsqueeze(0)
-        I_flir_tensor = I_flir_tensor.to(torch.float32)
-        flow_x_tensor = flow_x_tensor.to(torch.float32)
-        flow_y_tensor = flow_y_tensor.to(torch.float32)
+        I_flir_tensor = torch.from_numpy(I_flir).float().unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
+        flow_x_tensor = torch.from_numpy(flow_x).float().unsqueeze(0).unsqueeze(0)
+        flow_y_tensor = torch.from_numpy(flow_y).float().unsqueeze(0).unsqueeze(0)
         # 使用DCN进行变形
         warped_tensor = dcn_warp(I_flir_tensor, flow_x_tensor, flow_y_tensor)
         
@@ -183,18 +156,7 @@ def main():
         
         # 保存结果
         cv2.imwrite(f'Outputs/flir/flir_in_event_view_{base_name}.png', result_img)
-        
-        # 创建彩色显示版本（应用热力图颜色映射）
-        result_img_color = cv2.applyColorMap(result_img, cv2.COLORMAP_JET)
-        
-        # 创建并保存重叠图像 (使用matplotlib)
-        plt.figure(figsize=(10, 8))
-        plt.imshow(cv2.cvtColor(I_flir_color, cv2.COLOR_BGR2RGB))
-        plt.imshow(cv2.cvtColor(result_img_color, cv2.COLOR_BGR2RGB), alpha=0.5)
-        plt.axis('off')
-        plt.title(f'FLIR与投影结果叠加 - {base_name}')
-        plt.savefig(f'Outputs/overlay/overlay_{base_name}.png', bbox_inches='tight')
-        plt.close()
+    
 
     print("\n处理完成！结果已保存到 Outputs 文件夹:")
     

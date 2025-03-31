@@ -1,9 +1,7 @@
 # import sys
-# sys.path.append('/usr/lib/python3/dist-packages')
-
-# # 如果需要使用 ROS 包
-# sys.path.append('/opt/ros/noetic/lib/python3/dist-packages')
-
+# sys.path.append('/usr/lib/python3/dist-packages')')
+import sys
+sys.path.append('/usr/lib/python3/dist-packages')
 from metavision_core.event_io import EventsIterator
 import h5py
 import torch
