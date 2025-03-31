@@ -20,10 +20,11 @@
 
 ## 使用matlab进行标定（固定内参版）
 
-1.使用matlab自带工具箱进行内参标定，使用savemat.m存为.mat文件，maltab文件夹中的camera_intrinsics0.mat和camera_intrinsics1.mat分别是两个相机的内参
+1.使用matlab自带工具箱进行内参标定，使用savemat.m存为.mat文件，maltab文件夹中的camera_intrinsics0.mat和camera_intrinsics1.mat分别是event，flir两个相机的内参
 
-2.使用text1.m进行标定
+2.使用calib.m进行标定
 
-3.使用demo3.m进行红蓝映射观察标定结果
+3.使用projection.m进行红蓝映射观察标定结果
 
-ps：中间可能需要修改一点matlab内置库的代码
+ps：也有python的投影变换版本
+

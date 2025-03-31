@@ -145,6 +145,7 @@ disp(norm(C_event-C_flir));
 stereo_params = struct();
 stereo_params.K2 = K2;  % flir
 stereo_params.K1 = K1;  % event
+%外参，从世界坐标系到相机坐标系的变换。
 stereo_params.R2 = R2;  % flir
 stereo_params.T2 = T2;  % flir
 stereo_params.R1 = R1;  % event
@@ -155,7 +156,6 @@ stereo_params.RadialDistortion2 = param.CameraParameters1.RadialDistortion;
 stereo_params.RadialDistortion1 = param.CameraParameters2.RadialDistortion;
 stereo_params.TangentialDistortion2 = param.CameraParameters1.TangentialDistortion;
 stereo_params.TangentialDistortion1 = param.CameraParameters2.TangentialDistortion;
-% P_flir: 从世界坐标系到FLIR相机图像平面的投影
-% P_event: 从世界坐标系到Event相机图像平面的投影
+
 save('stereo_camera_parameters.mat', 'stereo_params');
 disp('立体相机参数已保存到 stereo_camera_parameters.mat');
