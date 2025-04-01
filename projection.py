@@ -57,8 +57,8 @@ def main():
     R_event = stereo_params['R1'][0, 0]  # event相机旋转矩阵
     T_event = stereo_params['T1'][0, 0]  # event相机平移向量
     # 获取相对外参
-    R_2slave = stereo_params['R_2slave'][0, 0]  # event相机旋转矩阵
-    T_2slave = stereo_params['T_2slave'][0, 0]  # event相机平移向量
+    R_2slave = stereo_params['R_2slave'][0, 0]  #主相机是flir 所以这个其实和下面的一样
+    T_2slave = stereo_params['T_2slave'][0, 0].reshape(3,1)  
     # 获取所有图像文件
     flir_files = sorted(glob.glob('flir_result/*.png'))
     R_f2e = np.matmul(R_event, R_flir.T)
@@ -66,9 +66,6 @@ def main():
     T_f2e = T_event - np.matmul(np.matmul(R_event, R_flir.T), T_flir)
     
     flir_h, flir_w = 1800,1800
-    # 设置投影平面Z值 默认1
-    # Z = 1
-    
     print("计算投影映射...")
     # 创建坐标网格 先横后竖 xy
     x_coords,y_coords = np.meshgrid(np.arange(flir_w), np.arange(flir_h))
