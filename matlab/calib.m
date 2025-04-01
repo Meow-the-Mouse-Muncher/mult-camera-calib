@@ -91,8 +91,8 @@ load('camera_intrinsics0.mat');   % event相机
 load('camera_intrinsics1.mat');   % flir相机
 
 % 重新排列imagePoints数组以适应标准函数输入格式
-imagePointsForCalib{1} = imagePoints{2};  % flir放在第一位
-imagePointsForCalib{2} = imagePoints{1};  % event放在第二位
+imagePointsForCalib{1} = imagePoints{2};  % flir作为主相机 分辨率更高
+imagePointsForCalib{2} = imagePoints{1};  % event作为从相机
 
 [param, pairsUsed, estimationErrors] = my_estimateCameraParameters(imagePointsForCalib, worldPoints, ...
     'EstimateSkew', false, 'EstimateTangentialDistortion', false, ...
@@ -106,7 +106,7 @@ imagePointsForCalib{2} = imagePoints{1};  % event放在第二位
 I2 = imread(file2{1});  % flir
 I1 = imread(file1{1});  % event
 
-% 相机内参
+% 相机内参 这里转换回来
 K2 = param.CameraParameters1.IntrinsicMatrix';  % flir
 K1 = param.CameraParameters2.IntrinsicMatrix';  % event
 
