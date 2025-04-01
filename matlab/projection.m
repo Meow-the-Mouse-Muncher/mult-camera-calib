@@ -49,10 +49,25 @@ for i = 1:numImages
     % 生成FLIR图像中所有像素的网格坐标
     [X_grid, Y_grid] = meshgrid(1:size(I1,2), 1:size(I1,1));
     
-    % 预先计算常量矩阵
-    P_flir_part = stereo_params.P_flir(:,1:2); %P_flir = K2 * [R2 T2]; 从世界到flir的投影矩阵
-    P_flir_const = -Z*stereo_params.P_flir(:,3)-stereo_params.P_flir(:,4);
-    
+    % 预先计算常量矩阵 P_flir = K2 * [R2 T2]; 从世界到flir的投影矩阵
+    P_flir_part = stereo_params.P_flir(:,1:2); %前两列 [p1,p2]
+    P_flir_const = -Z*stereo_params.P_flir(:,3)-stereo_params.P_flir(:,4); %[-p14; -p24; -p34
+    %{开始解释这段代码
+    λ * [x; y; 1] = P_flir * [X; Y; Z; 1]   （原始投影方程）
+    当 z=0
+    λ * [x; y; 1] = P_flir_part * [X; Y] + P_flir(:,4)
+    p11*X + p12*Y + p14 = λx
+    p21*X + p22*Y + p24 = λy
+    p31*X + p32*Y + p34 = λ
+    开始重组
+    p11*X + p12*Y - λx = -p14
+    p21*X + p22*Y - λy = -p24
+    p31*X + p32*Y - λ  = -p34
+    矩阵形式
+    [p11 p12  -u]   [X]   [ -p14 ]
+    [p21 p22  -v] * [Y] = [ -p24 ]
+    [p31 p32  -1]   [λ]   [ -p34 ]
+    %}
     % 映射数组 表示FLIR图像中每个像素对应到EVENT图像中的位置
     map_x = zeros(size(X_grid));
     map_y = zeros(size(Y_grid));
@@ -61,7 +76,7 @@ for i = 1:numImages
     for y = 1:size(I1,1)
         x_coords = X_grid(y,:);
         
-        % 构建正确的最后一列
+        % 构建正确的最后一列 % -u; -v; -1
         last_col = [-x_coords; -y*ones(1,length(x_coords)); -ones(1,length(x_coords))];
         
         % 一次处理整行

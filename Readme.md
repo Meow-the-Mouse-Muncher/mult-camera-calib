@@ -24,7 +24,6 @@
 
 2.使用calib.m进行标定
 
-3.使用projection.m进行红蓝映射观察标定结果
-
+3.使用projection.m进行红蓝映射观察标定结果  
+ps： matlab代码为屎山代码，请务必按照格式使用0为event，1为flir
 ps：也有python的投影变换版本
-
