@@ -10,19 +10,6 @@ import time
 import torch
 from torch import Tensor
 import torchvision
-
-# def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
-#     """
-#     对灰度图进行变形
-#     voxelgrid: [bs,1,H,W] - 单通道灰度图
-#     flow_x/flow_y: [bs,1,H,W] - 位移场
-#     """
-#     bs, c, H, W = voxelgrid.shape
-#     flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,1,2,H,W]
-#     flow = flow.reshape(bs, c * 2, H, W)  # [bs,2,H,W]
-#     # 单位矩阵权重
-#     weight = torch.eye(c, device=flow.device).to(torch.float32).reshape(c, c, 1, 1)
-#     return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,1,H,W]
 def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
     # voxelgrid: [bs,ts,H,W] | flow: [bs,ts,H,W]
     bs, ts, H, W = voxelgrid.shape

@@ -218,10 +218,6 @@ else
     parseInputs(varargin{:});
 end
 
-    
-    
-
-
 calibrationParams.shouldComputeErrors = (nargout >= 3);
 
 if iscell(imagePoints) == 0 % single camera
@@ -238,13 +234,14 @@ else % 2-camera stereo
 
     shouldComputeErrors = calibrationParams.shouldComputeErrors;
     calibrationParams.shouldComputeErrors = false;
-cameraModel.EstimateSkew = false;
-cameraModel.EstimateTangentialDistortion = false;
-cameraModel.NumRadialDistortionCoefficients = 2;
-    load('camera_intrinsics0.mat');
-    calibrationParams1=calibrationParams;
-    calibrationParams1.initIntrinsics=intrinsicMatrix0;
-    calibrationParams1.initRadial=radialDistortion0;
+    cameraModel.EstimateSkew = false;
+    cameraModel.EstimateTangentialDistortion = false;
+    cameraModel.NumRadialDistortionCoefficients = 2;
+
+    % 创建第二个相机的参数结构体
+    calibrationParams1 = calibrationParams;
+    calibrationParams1.initIntrinsics = calibrationParams.initIntrinsics2;
+    calibrationParams1.initRadial = calibrationParams.initRadial2;
 
     [cameraParams1, imagesUsed1, estimationErrors1] = calibrateOneCamera(imagePoints{1}, ...
         worldPoints, cameraModel, worldUnits, calibrationParams);
@@ -254,10 +251,7 @@ cameraModel.NumRadialDistortionCoefficients = 2;
     imagesUsed = imagesUsed1 & imagesUsed2;
     cameraParams1 = removeUnusedExtrinsics(cameraParams1, imagesUsed, imagesUsed1);
     cameraParams2 = removeUnusedExtrinsics(cameraParams2, imagesUsed, imagesUsed2);
-    % load('camera_intrinsics.mat');
-    % load('camera_intrinsics1.mat');
-    % cameraParams1.IntrinsicMatrix=intrinsicMatrix1;
-    % cameraParams2.IntrinsicMatrix=intrinsicMatrix;
+    
     % Compute the initial estimate of translation and rotation of camera 2
     [R, t] = estimateInitialTranslationAndRotation(cameraParams1, cameraParams2);
 
@@ -268,8 +262,7 @@ cameraModel.NumRadialDistortionCoefficients = 2;
     estimationErrors = refine(cameraParams, ip1(:, :, imagesUsed), ip2(:, :, imagesUsed), shouldComputeErrors);
     
 end
-
-
+% 后面全都是函数
 
 %--------------------------------------------------------------------------
 function [imagePoints, worldPoints, worldUnits, cameraModel, calibrationParams] = ...
@@ -284,12 +277,11 @@ parser.addParameter('EstimateTangentialDistortion', false, ...
 parser.addParameter('NumRadialDistortionCoefficients', 2, ...
     @checkNumRadialDistortionCoefficients);
 
-load('camera_intrinsics0.mat');
-load('camera_intrinsics1.mat');
-parser.addParameter('InitialIntrinsicMatrix', intrinsicMatrix1, @checkInitialIntrinsicMatrix);
-parser.addParameter('InitialIntrinsicMatrix2', intrinsicMatrix0, @checkInitialIntrinsicMatrix);
-parser.addParameter('InitialRadialDistortion', radialDistortion1, @checkInitialRadialDistortion);
-parser.addParameter('InitialRadialDistortion2', radialDistortion0, @checkInitialRadialDistortion);
+% 使用默认空矩阵，让用户必须传入参数
+parser.addParameter('InitialIntrinsicMatrix', [], @checkInitialIntrinsicMatrix);
+parser.addParameter('InitialIntrinsicMatrix2', [], @checkInitialIntrinsicMatrix);
+parser.addParameter('InitialRadialDistortion', [], @checkInitialRadialDistortion);
+parser.addParameter('InitialRadialDistortion2', [], @checkInitialRadialDistortion);
 parser.addParameter('ShowProgressBar', false, @checkShowProgressBar);
 
 parser.parse(varargin{:});
@@ -306,6 +298,14 @@ cameraModel.EstimateTangentialDistortion = ...
     parser.Results.EstimateTangentialDistortion;
 initIntrinsics = double(parser.Results.InitialIntrinsicMatrix);
 initRadial = double(parser.Results.InitialRadialDistortion);
+% 提取第二个相机的参数
+initIntrinsics2 = double(parser.Results.InitialIntrinsicMatrix2);
+initRadial2 = double(parser.Results.InitialRadialDistortion2);
+
+% 检查是否提供了必要的参数
+if isempty(initIntrinsics) || isempty(initIntrinsics2)
+    error('必须提供两个相机的内参矩阵 (InitialIntrinsicMatrix 和 InitialIntrinsicMatrix2)');
+end
 
 if ~isempty(initRadial) && ...
         any(strcmp('NumRadialDistortionCoefficients', parser.UsingDefaults))
@@ -320,8 +320,11 @@ if ~isempty(initRadial) && ...
     error(message('vision:calibrate:numRadialCoeffsDoesntMatch', ...
         'InitialRadialDistortion', 'NumRadialDistortionCoefficients'));
 end
-calibrationParams.initIntrinsics = initIntrinsics;
-calibrationParams.initRadial = initRadial;
+calibrationParams.initIntrinsics1 = initIntrinsics;
+calibrationParams.initRadial1 = initRadial;
+% 存储第二个相机的参数
+calibrationParams.initIntrinsics2 = initIntrinsics2;
+calibrationParams.initRadial2 = initRadial2;
 calibrationParams.showProgressBar = parser.Results.ShowProgressBar;
 
 %--------------------------------------------------------------------------
@@ -545,29 +548,6 @@ function v = computeLittleV(H, i, j)
          H(i,3)*H(j,1)+H(i,1)*H(j,3), H(i,3)*H(j,2)+H(i,2)*H(j,3), H(i,3)*H(j,3)];
 
 %--------------------------------------------------------------------------     
-% function B = computeB(V)
-% % lambda * B = inv(A)' * inv(A), where A is the intrinsic matrix
-% 
-% [~, ~, U] = svd(V);
-% b = U(:, end);
-% 
-% % b = [B11, B12, B22, B13, B23, B33]
-% B = [b(1), b(2), b(4); b(2), b(3), b(5); b(4), b(5), b(6)];
-
-%--------------------------------------------------------------------------
-% function A = computeIntrinsics(B)
-% % Compute the intrinsic matrix
-% 
-% cy = (B(1,2)*B(1,3) - B(1,1)*B(2,3)) / (B(1,1)*B(2,2)-B(1,2)^2);
-% lambda = B(3,3) - (B(1,3)^2 + cy * (B(1,2)*B(1,3) - B(1,1)*B(2,3))) / B(1,1);
-% fx = sqrt(lambda / B(1,1));
-% fy = sqrt(lambda * B(1,1) / (B(1,1) * B(2,2) - B(1,2)^2));
-% skew = -B(1,2) * fx^2 * fy / lambda;
-% cx = skew * cy / fx - B(1,3) * fx^2 / lambda;
-% A = vision.internal.calibration.constructIntrinsicMatrix(fx, fy, cx, cy, skew);
-% if ~isreal(A)
-%     error(message('vision:calibrate:complexCameraMatrix'));
-% end
 
 %--------------------------------------------------------------------------
 function [rotationVectors, translationVectors] = ...
@@ -602,81 +582,6 @@ rotationVectors = rotationVectors';
 translationVectors = translationVectors';
 
 %--------------------------------------------------------------------------
-% function [stereoParams, pairsUsed, errors] = calibrateTwoCameras(imagePoints,...
-%     worldPoints, cameraModel, worldUnits, calibrationParams)
-% 
-% imagePoints1 = imagePoints(:, :, :, 1);
-% imagePoints2 = imagePoints(:, :, :, 2);
-% 
-% showProgressBar = calibrationParams.showProgressBar;
-% progressBar = createStereoCameraProgressBar(showProgressBar);
-% calibrationParams.showProgressBar = false;
-% 
-% % 使用预先计算的内参矩阵
-% load('camera_intrinsics1.mat', 'intrinsicMatrix1');
-% load('camera_intrinsics.mat', 'intrinsicMatrix');
-% 
-% % Calibrate each camera separately
-% shouldComputeErrors = calibrationParams.shouldComputeErrors;
-% calibrationParams.shouldComputeErrors = false;
-% cameraModel.EstimateSkew = false;
-% cameraModel.EstimateTangentialDistortion = false;
-% cameraModel.NumRadialDistortionCoefficients = 0;  % 完全禁用径向畸变估计
-% [cameraParameters1, imagesUsed1] = calibrateOneCamera(imagePoints1, ...
-%     worldPoints, cameraModel, worldUnits, calibrationParams, false);
-% 
-% % 加载预计算的内参矩阵
-% load('camera_intrinsics1.mat', 'intrinsicMatrix1');
-% disp('Camera1初始内参矩阵:');
-% disp(intrinsicMatrix1);
-% % 在加载预计算内参后强制锁定参数
-% cameraParameters1.IntrinsicMatrix = intrinsicMatrix1;
-% cameraParameters1.Intrinsics.IntrinsicMatrix = intrinsicMatrix1;
-% cameraParameters1.ParameterEstimates.EstimateSkew = false;
-% cameraParameters1.ParameterEstimates.EstimateTangentialDistortion = false;
-% cameraParameters1.EstimateIntrinsic = false;  % 锁定内参矩阵
-% cameraParameters1.EstimateSkew = false;
-% cameraParameters1.EstimateTangentialDistortion = false;
-% 
-% progressBar.update();
-% 
-% [cameraParameters2, imagesUsed2] = calibrateOneCamera(imagePoints2, ...
-%     worldPoints, cameraModel, worldUnits, calibrationParams, false);
-% 
-% % 加载预计算的内参矩阵
-% load('camera_intrinsics.mat', 'intrinsicMatrix');
-% disp('Camera2初始内参矩阵:');
-% disp(intrinsicMatrix);
-% cameraParameters2.IntrinsicMatrix = intrinsicMatrix;
-% cameraParameters2.Intrinsics.IntrinsicMatrix = intrinsicMatrix;
-% 
-% progressBar.update();
-% 
-% % Account for possible mismatched pairs
-% pairsUsed = imagesUsed1 & imagesUsed2;
-% cameraParameters1 = removeUnusedExtrinsics(cameraParameters1, pairsUsed, ...
-%     imagesUsed1);
-% cameraParameters2 = removeUnusedExtrinsics(cameraParameters2, pairsUsed, ...
-%     imagesUsed2);
-% 
-% % Compute the initial estimate of translation and rotation of camera 2
-% [R, t] = estimateInitialTranslationAndRotation(cameraParameters1, ...
-%     cameraParameters2);
-% 
-% stereoParams = stereoParameters(cameraParameters1, ...
-%     cameraParameters2, R, t);
-% 
-% errors = refine(stereoParams, imagePoints1(:, :, pairsUsed), ...
-%     imagePoints2(:, :, pairsUsed), shouldComputeErrors);
-% 
-% disp('优化后Camera1内参矩阵:');
-% disp(stereoParams.CameraParameters1.IntrinsicMatrix);
-% disp('优化后Camera2内参矩阵:');
-% disp(stereoParams.CameraParameters2.IntrinsicMatrix);
-% 
-% progressBar.update();
-% delete(progressBar);
-%--------------------------------------------------------------------------
 function cameraParams = removeUnusedExtrinsics(cameraParams, pairsUsed, ...
     imagesUsed)
 % Remove the extrinsics corresponding to the images that were not used by
@@ -709,7 +614,7 @@ for i = 1:numImages
         cameraParameters1.RotationMatrices(:, :, i);
     rotationVectors(i, :) = vision.internal.calibration.rodriguesMatrixToVector(R);
     translationVectors(i, :) = (cameraParameters2.TranslationVectors(i, :)' - ...
-        R * cameraParameters1.TranslationVectors(i, :)')';
+        R * cameraParameters1.TranslationVectors(i, :)')');
 end
 
 % Take the median rotation and translation as the initial guess.
