@@ -115,7 +115,9 @@ R2 = param.CameraParameters1.RotationMatrices(:,:,1)';  % flir
 T2 = param.CameraParameters1.TranslationVectors(1,:)';  % flir
 R1 = param.CameraParameters2.RotationMatrices(:,:,1)';  % event
 T1 = param.CameraParameters2.TranslationVectors(1,:)';  % event
-
+% 相对外参
+R_2slave = param.PoseCamera2.R;
+T_2slave = param.PoseCamera2.Translation;
 % 计算投影矩阵
 P_flir = K2 * [R2 T2];  % flir投影矩阵
 P_event = K1 * [R1 T1];  % event投影矩阵
@@ -150,12 +152,15 @@ stereo_params.R2 = R2;  % flir
 stereo_params.T2 = T2;  % flir
 stereo_params.R1 = R1;  % event
 stereo_params.T1 = T1;  % event
+stereo_params.R_2slave = R_2slave;
+stereo_params.T_2slave = T_2slave;
 stereo_params.P_flir = P_flir;  
 stereo_params.P_event = P_event;
 stereo_params.RadialDistortion2 = param.CameraParameters1.RadialDistortion;
 stereo_params.RadialDistortion1 = param.CameraParameters2.RadialDistortion;
 stereo_params.TangentialDistortion2 = param.CameraParameters1.TangentialDistortion;
 stereo_params.TangentialDistortion1 = param.CameraParameters2.TangentialDistortion;
+
 
 save('stereo_camera_parameters.mat', 'stereo_params');
 disp('立体相机参数已保存到 stereo_camera_parameters.mat');
