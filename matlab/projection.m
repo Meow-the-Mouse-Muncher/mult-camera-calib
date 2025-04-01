@@ -1,3 +1,4 @@
+% event 投影到flir视角
 % 创建输出文件夹
 if ~exist('Outputs/flir', 'dir')
     mkdir('Outputs/flir');
@@ -49,10 +50,10 @@ for i = 1:numImages
     [X_grid, Y_grid] = meshgrid(1:size(I1,2), 1:size(I1,1));
     
     % 预先计算常量矩阵
-    P_flir_part = stereo_params.P_flir(:,1:2);
+    P_flir_part = stereo_params.P_flir(:,1:2); %P_flir = K2 * [R2 T2]; 从世界到flir的投影矩阵
     P_flir_const = -Z*stereo_params.P_flir(:,3)-stereo_params.P_flir(:,4);
     
-    % 映射数组
+    % 映射数组 表示FLIR图像中每个像素对应到EVENT图像中的位置
     map_x = zeros(size(X_grid));
     map_y = zeros(size(Y_grid));
     

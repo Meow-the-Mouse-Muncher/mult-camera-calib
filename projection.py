@@ -87,7 +87,7 @@ def main():
     flir_pixels = np.stack([x_coords.flatten(), y_coords.flatten(), np.ones_like(x_coords.flatten())], axis=0)
     
     # 使用内参矩阵的逆矩阵将像素坐标转换为归一化相机坐标
-    flir_rays = np.matmul(K_event_inv, flir_pixels)  # [3, h*w]
+    flir_rays = np.matmul(K_flir_inv, flir_pixels)  # [3, h*w]
     
     # 将flir相机坐标系中的射线转换到event相机坐标系
     flir_rays = np.matmul(R_f2e, flir_rays) + T_f2e # [3, h*w]
@@ -103,8 +103,8 @@ def main():
     map_y = f2e_pixels[1, :].reshape(flir_h, flir_w)
     
     # 计算位移场 (对于DCN需要的是位移而不是绝对坐标)
-    flow_x =  x_coords-map_x
-    flow_y =  y_coords-map_y
+    flow_x =map_x-x_coords
+    flow_y =map_y-y_coords
     
     # 处理所有FLIR图像
     print("读取所有图像...")
