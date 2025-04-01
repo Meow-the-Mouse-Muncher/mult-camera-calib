@@ -11,27 +11,27 @@ import torch
 from torch import Tensor
 import torchvision
 
-def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
-    """
-    对灰度图进行变形
-    voxelgrid: [bs,1,H,W] - 单通道灰度图
-    flow_x/flow_y: [bs,1,H,W] - 位移场
-    """
-    bs, c, H, W = voxelgrid.shape
-    flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,1,2,H,W]
-    flow = flow.reshape(bs, c * 2, H, W)  # [bs,2,H,W]
-    # 单位矩阵权重
-    weight = torch.eye(c, device=flow.device).to(torch.float32).reshape(c, c, 1, 1)
-    return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,1,H,W]
 # def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
-#     # voxelgrid: [bs,ts,H,W] | flow: [bs,ts,H,W]
-#     bs, ts, H, W = voxelgrid.shape
-#     flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,ts,2,H,W]
-#     flow = flow.reshape(bs, ts * 2, H, W)  # [bs,ts*2,H,W]
-#     #  单位矩阵 保证了 只对一张图处理
-#     weight = torch.eye(ts, device=flow.device).double().reshape(ts, ts, 1, 1)  # 返回 ts 张图 对ts张图做处理
-#     # 单位卷积核
-#     return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,ts,H,W]
+#     """
+#     对灰度图进行变形
+#     voxelgrid: [bs,1,H,W] - 单通道灰度图
+#     flow_x/flow_y: [bs,1,H,W] - 位移场
+#     """
+#     bs, c, H, W = voxelgrid.shape
+#     flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,1,2,H,W]
+#     flow = flow.reshape(bs, c * 2, H, W)  # [bs,2,H,W]
+#     # 单位矩阵权重
+#     weight = torch.eye(c, device=flow.device).to(torch.float32).reshape(c, c, 1, 1)
+#     return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,1,H,W]
+def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
+    # voxelgrid: [bs,ts,H,W] | flow: [bs,ts,H,W]
+    bs, ts, H, W = voxelgrid.shape
+    flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,ts,2,H,W]
+    flow = flow.reshape(bs, ts * 2, H, W)  # [bs,ts*2,H,W]
+    #  单位矩阵 保证了 只对一张图处理
+    weight = torch.eye(ts, device=flow.device).float().reshape(ts, ts, 1, 1)  # 返回 ts 张图 对ts张图做处理
+    # 单位卷积核
+    return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,ts,H,W]
 
 def undistort_image(img, K, dist_coeffs):
     """
@@ -103,62 +103,55 @@ def main():
     map_y = f2e_pixels[1, :].reshape(flir_h, flir_w)
     
     # 计算位移场 (对于DCN需要的是位移而不是绝对坐标)
-    flow_x = map_x - x_coords
-    flow_y = map_y - y_coords
+    flow_x =  x_coords-map_x
+    flow_y =  y_coords-map_y
     
-    # 处理每张FLIR图像
-    for i, flir_file in enumerate(flir_files):
-        print(f"处理图像 {i+1}/{len(flir_files)}: {os.path.basename(flir_file)}")
-        
+    # 处理所有FLIR图像
+    print("读取所有图像...")
+    all_images = []
+    for flir_file in tqdm(flir_files):
         # 读取FLIR图像为灰度图
         I_flir = cv2.imread(flir_file, cv2.IMREAD_GRAYSCALE)  # 灰度图
+        all_images.append(I_flir)
+    
+    # 将所有图像转换为一个批次的tensor
+    batch_tensor = torch.stack([
+        torch.from_numpy(img).float() for img in all_images
+    ], dim=0).unsqueeze(1)  # [N, 1, H, W]
+    
+    # 准备批量位移场tensor
+    N = len(all_images)
+    flow_x_tensor = torch.from_numpy(flow_x).float().unsqueeze(0).unsqueeze(0)
+    flow_y_tensor = torch.from_numpy(flow_y).float().unsqueeze(0).unsqueeze(0)
+    # 复制到批次大小
+    flow_x_tensor = flow_x_tensor.repeat(N, 1, 1, 1)  # [N, 1, H, W]
+    flow_y_tensor = flow_y_tensor.repeat(N, 1, 1, 1)  # [N, 1, H, W]
+    
+    print("批量处理图像变形...")
+    # 使用DCN进行批量变形
+    warped_tensor = dcn_warp(batch_tensor, flow_x_tensor, flow_y_tensor)
+    
+    # # 创建有效区域掩码
+    # projection_mask = ((map_x >= 0) & (map_x < all_images[0].shape[1]) & 
+    #                   (map_y >= 0) & (map_y < all_images[0].shape[0]))
+    # projection_mask = projection_mask.astype(np.uint8) * 255
+    
+    print("保存处理结果...")
+    # 处理并保存每张结果
+    for i, (warped, flir_file) in enumerate(zip(warped_tensor, flir_files)):
+        # 转回numpy格式
+        warped_img = warped.squeeze().numpy().astype(np.uint8)
         
-        # # 去畸变
-        # I_flir_undist = undistort_image(I_flir, K_flir, dist_flir)
-        
-        # # 获取FLIR图像的实际尺寸
-        # flir_h, flir_w = I_flir_undist.shape
-        
-        # # 调整位移场大小以匹配FLIR图像
-        # flow_x_resized = cv2.resize(flow_x, (flir_w, flir_h), interpolation=cv2.INTER_LINEAR)
-        # flow_y_resized = cv2.resize(flow_y, (flir_w, flir_h), interpolation=cv2.INTER_LINEAR)
-        
-        # # 根据尺寸比例缩放位移值
-        # flow_x_resized = flow_x_resized * (flir_w / flir_w)
-        # flow_y_resized = flow_y_resized * (flir_h / flir_h)
-        
-        # 准备输入tensor (灰度图为单通道，不需要permute通道维度)
-        I_flir_tensor = torch.from_numpy(I_flir).float().unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
-        flow_x_tensor = torch.from_numpy(flow_x).float().unsqueeze(0).unsqueeze(0)
-        flow_y_tensor = torch.from_numpy(flow_y).float().unsqueeze(0).unsqueeze(0)
-        # 使用DCN进行变形
-        warped_tensor = dcn_warp(I_flir_tensor, flow_x_tensor, flow_y_tensor)
-        
-        # 转回numpy格式 (单通道图像不需要permute)
-        warped_img = warped_tensor.squeeze().numpy().astype(np.uint8)
-        
-        # 创建有效区域掩码并调整尺寸以匹配warped_img
-        projection_mask = ((map_x >= 0) & (map_x < I_flir.shape[1]) & 
-                          (map_y >= 0) & (map_y < I_flir.shape[0]))
-        projection_mask = projection_mask.astype(np.uint8) * 255
-
-        # 调整掩码大小以匹配warped_img
-        projection_mask_resized = cv2.resize(projection_mask, 
-                                           (warped_img.shape[1], warped_img.shape[0]),
-                                           interpolation=cv2.INTER_NEAREST)
-
-        # 应用调整后的掩码
-        result_img = cv2.bitwise_and(warped_img, warped_img, 
-                                    mask=projection_mask_resized)
+        # 应用掩码
+        # result_img = cv2.bitwise_and(warped_img, warped_img, mask=projection_mask)
         
         # 获取文件名（不包含路径和扩展名）
         base_name = os.path.splitext(os.path.basename(flir_file))[0]
         
         # 保存结果
-        cv2.imwrite(f'Outputs/flir/flir_in_event_view_{base_name}.png', result_img)
-    
-
-    print("\n处理完成！结果已保存到 Outputs 文件夹:")
+        cv2.imwrite(f'Outputs/flir/flir_in_event_view_{base_name}.png', warped_img)
+        
+    print("\n处理完成！结果已保存到 Outputs 文件夹")
     
 if __name__ == "__main__":
     main()
