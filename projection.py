@@ -56,6 +56,9 @@ def main():
     T_flir = stereo_params['T2'][0, 0]  # flir相机平移向量
     R_event = stereo_params['R1'][0, 0]  # event相机旋转矩阵
     T_event = stereo_params['T1'][0, 0]  # event相机平移向量
+    # 获取相对外参
+    R_2slave = stereo_params['R_2slave'][0, 0]  # event相机旋转矩阵
+    T_2slave = stereo_params['T_2slave'][0, 0]  # event相机平移向量
     # 获取所有图像文件
     flir_files = sorted(glob.glob('flir_result/*.png'))
     R_f2e = np.matmul(R_event, R_flir.T)
