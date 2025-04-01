@@ -39,9 +39,7 @@ def main():
     
     # 提取相机内参和畸变系数
     K_flir = stereo_params['K2'][0, 0]  # flir相机内参
-    K_flir_inv = np.linalg.inv(K_flir)  # flir相机逆内参
     K_event = stereo_params['K1'][0, 0]  # event相机内参
-    K_event_inv = np.linalg.inv(K_event)  # event相机逆内参
     dist_flir = np.hstack([
         stereo_params['RadialDistortion2'][0, 0].flatten(), 
         stereo_params['TangentialDistortion2'][0, 0].flatten()
@@ -51,20 +49,11 @@ def main():
         stereo_params['RadialDistortion1'][0, 0].flatten(), 
         stereo_params['TangentialDistortion1'][0, 0].flatten()
     ])
-    # 获取旋转矩阵和平移矩阵
-    R_flir = stereo_params['R2'][0, 0]  # flir相机旋转矩阵
-    T_flir = stereo_params['T2'][0, 0]  # flir相机平移向量
-    R_event = stereo_params['R1'][0, 0]  # event相机旋转矩阵
-    T_event = stereo_params['T1'][0, 0]  # event相机平移向量
-    # 获取相对外参
-    R_2slave = stereo_params['R_2slave'][0, 0]  #主相机是flir 所以这个其实和下面的一样
-    T_2slave = stereo_params['T_2slave'][0, 0].reshape(3,1)  
+    # 获取相机投影矩阵
+    P_flir = stereo_params['P_flir'][0, 0]  # 世界到flir相机投影矩阵
+    P_event = stereo_params['P_event'][0, 0]  # 世界到event相机投影矩阵
     # 获取所有图像文件
     flir_files = sorted(glob.glob('flir_result/*.png'))
-    R_f2e = np.matmul(R_event, R_flir.T)
-    # 单位是mm 
-    T_f2e = T_event - np.matmul(np.matmul(R_event, R_flir.T), T_flir)
-    
     flir_h, flir_w = 1800,1800
     print("计算投影映射...")
     # 创建坐标网格 先横后竖 xy
