@@ -27,3 +27,11 @@
 3.使用projection.m进行红蓝映射观察标定结果  
 ps： matlab代码为屎山代码，请务必按照格式使用0为event，1为flir
 ps：也有python的投影变换版本
+
+flir相机坐标系到event相机坐标系的变换公式：
+$X_e=R_{f2e}X_f+T_{f2e}$
+又有内参的相关公式
+$x_e=\frac{1}{z_e}K_eX_e$
+$x_f=\frac{1}{z_f}K_fX_f$
+则从flir像素坐标到event的像素坐标转换为:
+$x_e=\frac{z_f}{z_e}K_eR_{f2e}K^{-1}_{f}X_f+\frac{1}{z_e}K_eT_{f2e}$

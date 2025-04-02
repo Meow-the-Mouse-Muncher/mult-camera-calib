@@ -38,8 +38,11 @@ def main():
     stereo_params = io.loadmat('matlab/stereo_camera_parameters.mat')['stereo_params']
     
     # 提取相机内参和畸变系数
-    K_flir = stereo_params['K2'][0, 0]  # flir相机内参
-    K_event = stereo_params['K1'][0, 0]  # event相机内参
+    K_flir = np.hstack([stereo_params['K2'][0, 0], np.zeros((3,1))])  # 在flir相机内参K矩阵最后添加一列0
+    K_event = np.hstack([stereo_params['K1'][0, 0], np.zeros((3,1))])  # 在event相机内参K矩阵最后添加一列0
+    # 求解伪逆矩阵
+    K_flir_inv = np.linalg.pinv(K_flir)
+    K_event_inv = np.linalg.pinv(K_event)
     dist_flir = np.hstack([
         stereo_params['RadialDistortion2'][0, 0].flatten(), 
         stereo_params['TangentialDistortion2'][0, 0].flatten()
@@ -52,6 +55,14 @@ def main():
     # 获取相机投影矩阵
     P_flir = stereo_params['P_flir'][0, 0]  # 世界到flir相机投影矩阵
     P_event = stereo_params['P_event'][0, 0]  # 世界到event相机投影矩阵
+    # 获取旋转矩阵和平移矩阵
+    R_flir = stereo_params['R2'][0, 0]  # flir相机旋转矩阵
+    t_flir = stereo_params['T2'][0, 0]  # flir相机平移向量
+    R_event = stereo_params['R1'][0, 0]  # event相机旋转矩阵
+    t_event = stereo_params['T1'][0, 0]  # event相机平移向量
+    # 获取相对外参
+    R_2slave = stereo_params['R_2slave'][0, 0]  # event相机旋转矩阵
+    t_2slave = stereo_params['T_2slave'][0, 0]  # event相机平移向量
     # 获取所有图像文件
     flir_files = sorted(glob.glob('flir_result/*.png'))
     flir_h, flir_w = 1800,1800
@@ -61,19 +72,18 @@ def main():
     
     # 创建均匀坐标 [3, h*w]
     flir_pixels = np.stack([x_coords.flatten(), y_coords.flatten(), np.ones_like(x_coords.flatten())], axis=0)
-    
+    # 构建变换矩阵
+    T_f2e = np.hstack([R_2slave, t_2slave.reshape(3, 1)])
+    T_f2e = np.vstack([T_f2e, np.array([0, 0, 0, 1])])
     # 使用内参矩阵的逆矩阵将像素坐标转换为归一化相机坐标
     flir_rays = np.matmul(K_flir_inv, flir_pixels)  # [3, h*w]
-    
     # 将flir相机坐标系中的射线转换到event相机坐标系
-    flir_rays = np.matmul(R_f2e, flir_rays) + T_f2e # [3, h*w]
+    flir_rays = np.matmul(T_f2e, flir_rays)
     # 使用内参矩阵将3d坐标转换为像素坐标
     flir_rays = np.matmul(K_event, flir_rays)  # [3, h*w]
     # 进行归一化 f2e_pixels->u v 1
-    f2e_pixels = np.zeros_like(flir_pixels)
     # 0-x 1-y 2-z
-    f2e_pixels[0, :] = flir_rays[0, :] / flir_rays[2, :]
-    f2e_pixels[1, :] = flir_rays[1, :] / flir_rays[2, :]
+    f2e_pixels = flir_rays / flir_rays[2, :]
     # 重塑回原始形状
     map_x = f2e_pixels[0, :].reshape(flir_h, flir_w)
     map_y = f2e_pixels[1, :].reshape(flir_h, flir_w)
