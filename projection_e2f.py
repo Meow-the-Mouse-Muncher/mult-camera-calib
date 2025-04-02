@@ -164,14 +164,9 @@ def main():
         # 去畸变
         I_event = undistort_image(I_event, K_event, dist_event)
         all_images.append(I_event)
-    
-    # 将所有图像转换为一个批次的tensor
-    batch_tensor = torch.stack([
-        torch.from_numpy(img).float() for img in all_images
-    ], dim=0).unsqueeze(1)  # [N, 1, H, W]
-
     # 创建输出文件夹
     os.makedirs('Outputs/event', exist_ok=True)  # 为event图像创建输出文件夹
+    os.makedirs('Outputs/overlay_e2f', exist_ok=True)  # 为重叠图像创建输出文件夹
     
     warped_images = []
     for i, img in enumerate(tqdm(all_images, desc="变形处理")):
@@ -196,6 +191,28 @@ def main():
         
         # 保存结果
         cv2.imwrite(f'Outputs/event/event_in_flir_view_{base_name}.png', result)
+        
+        # 读取对应的FLIR图像
+        if i < len(flir_files):
+            flir_img = cv2.imread(flir_files[i], cv2.IMREAD_GRAYSCALE)
+            # 调整FLIR图像大小以匹配事件图像变形后的尺寸
+            flir_img_resized = cv2.resize(flir_img, (result.shape[1], result.shape[0]))
+            
+            # 创建彩色重叠图像
+            overlay_img = np.zeros((result.shape[0], result.shape[1], 3), dtype=np.uint8)
+            
+            # 将变形后的事件图像放在蓝色通道
+            overlay_img[:, :, 0] = result
+            
+            # 将FLIR图像放在绿色通道
+            overlay_img[:, :, 1] = flir_img_resized
+            
+            # 保存重叠图像
+            cv2.imwrite(f'Outputs/overlay_e2f/overlay_{base_name}.png', overlay_img)
+            
+            # 创建带有标签的可视化图像
+            vis_img = np.zeros((result.shape[0] + 30, result.shape[1], 3), dtype=np.uint8)
+            vis_img[:result.shape[0], :, :] = overlay_img
     
     print("\n处理完成！结果已保存到 Outputs 文件夹")
 if __name__ == "__main__":
