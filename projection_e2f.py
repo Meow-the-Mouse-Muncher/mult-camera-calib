@@ -1,3 +1,4 @@
+
 import numpy as np
 import cv2
 import os
@@ -10,6 +11,15 @@ import time
 import torch
 from torch import Tensor
 import torchvision
+def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
+    # voxelgrid: [bs,ts,H,W] | flow: [bs,ts,H,W]
+    bs, ts, H, W = voxelgrid.shape
+    flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,ts,2,H,W]
+    flow = flow.reshape(bs, ts * 2, H, W)  # [bs,ts*2,H,W]
+    #  单位矩阵 保证了 只对一张图处理
+    weight = torch.eye(ts, device=flow.device).float().reshape(ts, ts, 1, 1)  # 返回 ts 张图 对ts张图做处理
+    # 单位卷积核
+    return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,ts,H,W]
 
 def undistort_image(img, K, dist_coeffs):
     """
@@ -123,9 +133,6 @@ def main():
     map_y = event_proj[1, :].reshape(flir_h, flir_w)
     # 这里得到的 坐标问题不大
     
-    # 计算位移场 (对于DCN需要的是位移而不是绝对坐标)
-    flow_x = map_x - x_coords
-    flow_y = map_y - y_coords
     '''
     开始解释这段代码
     λ * [x; y; 1] = P_flir * [X; Y; Z; 1]   （原始投影方程）
@@ -144,54 +151,52 @@ def main():
     [p31 p32  -1]   [λ]   [ -p34 ]
     '''
     
-    # 处理所有FLIR图像
-    print("读取所有图像...")
+        # 处理所有event图像
+    print("读取所有event图像...")
     all_images = []
-    for flir_file in tqdm(flir_files):
-        # 读取FLIR图像为灰度图
-        I_flir = cv2.imread(flir_file, cv2.IMREAD_GRAYSCALE)  # 灰度图
-        #去畸变
-        # I_flir = undistort_image(I_flir, K_flir, dist_flir)
-        all_images.append(I_flir)
+    event_files = sorted(glob.glob('evk_result/*.png'))  # 读取event图像文件
+    for event_file in tqdm(event_files):
+        # 读取event图像为灰度图
+        I_event = cv2.imread(event_file, cv2.IMREAD_GRAYSCALE)  # 灰度图
+        # 如果图像不是600x600，则调整大小
+        if I_event.shape[0] != 600 or I_event.shape[1] != 600:
+            I_event = cv2.resize(I_event, (600, 600))
+        # 去畸变
+        I_event = undistort_image(I_event, K_event, dist_event)
+        all_images.append(I_event)
     
     # 将所有图像转换为一个批次的tensor
     batch_tensor = torch.stack([
         torch.from_numpy(img).float() for img in all_images
     ], dim=0).unsqueeze(1)  # [N, 1, H, W]
+
+    # 创建输出文件夹
+    os.makedirs('Outputs/event', exist_ok=True)  # 为event图像创建输出文件夹
     
-    # 准备批量位移场tensor
-    N = len(all_images)
-    flow_x_tensor = torch.from_numpy(flow_x).float().unsqueeze(0).unsqueeze(0)
-    flow_y_tensor = torch.from_numpy(flow_y).float().unsqueeze(0).unsqueeze(0)
-    # 复制到批次大小
-    flow_x_tensor = flow_x_tensor.repeat(N, 1, 1, 1)  # [N, 1, H, W]
-    flow_y_tensor = flow_y_tensor.repeat(N, 1, 1, 1)  # [N, 1, H, W]
-    
-    print("批量处理图像变形...")
-    # 使用DCN进行批量变形
-    warped_tensor = dcn_warp(batch_tensor, flow_x_tensor, flow_y_tensor)
-    
-    # # 创建有效区域掩码
-    # projection_mask = ((map_x >= 0) & (map_x < all_images[0].shape[1]) & 
-    #                   (map_y >= 0) & (map_y < all_images[0].shape[0]))
-    # projection_mask = projection_mask.astype(np.uint8) * 255
-    
-    print("保存处理结果...")
-    # 处理并保存每张结果
-    for i, (warped, flir_file) in enumerate(zip(warped_tensor, flir_files)):
-        # 转回numpy格式
-        warped_img = warped.squeeze().numpy().astype(np.uint8)
+    warped_images = []
+    for i, img in enumerate(tqdm(all_images, desc="变形处理")):
+        # 创建映射矩阵 (float32类型)
+        map_x_float = map_x.astype(np.float32)
+        map_y_float = map_y.astype(np.float32)
+        
+        # 使用OpenCV的remap函数进行图像变形
+        warped = cv2.remap(img, map_x_float, map_y_float, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+        
+        # 创建有效区域掩码
+        mask = ((map_x >= 0) & (map_x < img.shape[1]) & 
+                (map_y >= 0) & (map_y < img.shape[0]))
+        mask = mask.astype(np.uint8) * 255
         
         # 应用掩码
-        # result_img = cv2.bitwise_and(warped_img, warped_img, mask=projection_mask)
+        result = cv2.bitwise_and(warped, warped, mask=mask)
+        warped_images.append(result)
         
         # 获取文件名（不包含路径和扩展名）
-        base_name = os.path.splitext(os.path.basename(flir_file))[0]
+        base_name = os.path.splitext(os.path.basename(event_files[i]))[0]
         
         # 保存结果
-        cv2.imwrite(f'Outputs/flir/flir_in_event_view_{base_name}.png', warped_img)
-        
-    print("\n处理完成！结果已保存到 Outputs 文件夹")
+        cv2.imwrite(f'Outputs/event/event_in_flir_view_{base_name}.png', result)
     
+    print("\n处理完成！结果已保存到 Outputs 文件夹")
 if __name__ == "__main__":
     main()
