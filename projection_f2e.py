@@ -1,4 +1,5 @@
 
+from tkinter import N
 import numpy as np
 import cv2
 import os
@@ -11,16 +12,8 @@ import time
 import torch
 from torch import Tensor
 import torchvision
-def dcn_warp(voxelgrid: Tensor, flow_x: Tensor, flow_y: Tensor):
-    # voxelgrid: [bs,ts,H,W] | flow: [bs,ts,H,W]
-    bs, ts, H, W = voxelgrid.shape
-    flow = torch.stack([flow_y, flow_x], dim=2)  # [bs,ts,2,H,W]
-    flow = flow.reshape(bs, ts * 2, H, W)  # [bs,ts*2,H,W]
-    #  单位矩阵 保证了 只对一张图处理
-    weight = torch.eye(ts, device=flow.device).float().reshape(ts, ts, 1, 1)  # 返回 ts 张图 对ts张图做处理
-    # 单位卷积核
-    return torchvision.ops.deform_conv2d(voxelgrid, flow, weight)  # [bs,ts,H,W]
-
+from metavision_core.event_io import EventsIterator,RawReader
+from metavision_sdk_core import OnDemandFrameGenerationAlgorithm
 def undistort_image(img, K, dist_coeffs):
     """
     去除图像畸变
@@ -29,14 +22,30 @@ def undistort_image(img, K, dist_coeffs):
     new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(K, dist_coeffs, (w,h), 1, (w,h))
     undistorted = cv2.undistort(img, K, dist_coeffs, None, new_camera_matrix)
     return undistorted
-
+def create_event_frame(events, height, width, accumulation_time_us=10000):
+    """
+    将事件数据转换为帧图像
+    参数:
+    - events: 事件数据
+    - height, width: 输出图像尺寸
+    - accumulation_time_us: 累积时间(微秒)
+    返回:
+    - 彩色事件帧图像
+    """
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    
+    # 正事件用红色(0,0,255)，负事件用蓝色(255,0,0)
+    pos_events = events[events['p'] == 1]
+    neg_events = events[events['p'] == 0]
+    
+    frame[pos_events['y'], pos_events['x'], 2] = 255  # 红色通道
+    frame[neg_events['y'], neg_events['x'], 0] = 255  # 蓝色通道
+    
+    return frame
 def main():
-    # 创建输出文件夹
-    os.makedirs('Outputs/flir', exist_ok=True)
-    os.makedirs('Outputs/overlay', exist_ok=True)
     
     # 加载相机参数
-    stereo_params = io.loadmat('matlab/stereo_camera_parameters.mat')['stereo_params']
+    stereo_params = io.loadmat('./data_4.2/stereo_camera_parameters.mat')['stereo_params']
     
     # 提取相机内参和畸变系数
     # 提取相机内参和畸变系数
@@ -55,9 +64,10 @@ def main():
     P_flir = stereo_params['P_flir'][0, 0]  # 世界到flir相机投影矩阵
     P_event = stereo_params['P_event'][0, 0]  # 世界到event相机投影矩阵
 
-    # 获取所有图像文件
-    event_files = sorted(glob.glob('evk_result/*.png'))  # 读取event图像文件
-    flir_files = sorted(glob.glob('flir_result/*.png'))  # 读取flir图像文件
+    # 获取所有子目录
+    floder = None
+    base_path =f'./colmap'
+    floders = [x for x in os.listdir(base_path)]
     flir_h, flir_w = 1800,1800
     event_h, event_w = 600,600
     print("计算投影映射...")
@@ -150,54 +160,41 @@ def main():
     '''
     
     # 处理所有flir图像
-    print("读取所有flir图像...")
-    all_images = []
-    for flir_file in tqdm(flir_files):
-        # 读取event图像为灰度图
-        I_flir = cv2.imread(flir_file, cv2.IMREAD_GRAYSCALE)  # 灰度图
-        # 如果图像不是,则调整大小
-        if I_flir.shape[0] != flir_h or I_flir.shape[1] != flir_w:
-            I_flir = cv2.resize(I_flir, (flir_h, flir_w))
-        # 去畸变
-        I_flir = undistort_image(I_flir, K_flir, dist_event)
-        all_images.append(I_flir)
+    for floder in tqdm(floders,desc="处理文件夹"):
+        subdirs = [x for x in os.listdir(os.path.join(base_path, floder))]
+        subdirs.sort(key=lambda x: tuple(map(int, x.split())))
+        for flir_subdir in subdirs:
+            flir_dir = os.path.join(base_path,floder,flir_subdir)
+            flir_files = glob.glob(os.path.join(flir_dir, '*.png'))
+            flir_files.sort(key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
+            all_images = []
+            for flir_file in flir_files:
+                #灰度图
+                I_flir = cv2.imread(flir_file, cv2.IMREAD_GRAYSCALE)  # 灰度图
+                # 如果图像不是,则调整大小
+                if I_flir.shape[0] != flir_h or I_flir.shape[1] != flir_w:
+                    I_flir = cv2.resize(I_flir, (flir_h, flir_w))
+                # 去畸变
+                I_flir = undistort_image(I_flir, K_flir, dist_event)
+                all_images.append(I_flir)
+            for i, img in enumerate(all_images):
+                os.makedirs(f'projection_outputs/flir/{floder}/{flir_subdir}', exist_ok=True)  # 为flir图像创建输出文件夹
+                # 创建映射矩阵 (float32类型)
+                map_x_float = map_x.astype(np.float32)
+                map_y_float = map_y.astype(np.float32)
+                # 使用OpenCV的remap函数进行图像变形
+                warped = cv2.remap(img, map_x_float, map_y_float, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+                # 创建有效区域掩码
+                mask = ((map_x >= 0) & (map_x < img.shape[1]) & 
+                        (map_y >= 0) & (map_y < img.shape[0]))
+                mask = mask.astype(np.uint8) * 255
+                # 应用掩码
+                result = cv2.bitwise_and(warped, warped, mask=mask)
+                # 获取文件名（不包含路径和扩展名）
+                # 保存结果
+                cv2.imwrite(f'projection_outputs/flir/{floder}/{flir_subdir}/{i:04d}.png', result)
 
-    # 创建输出文件夹
-    os.makedirs('Outputs/flir', exist_ok=True)  # 为flir图像创建输出文件夹
-    os.makedirs('Outputs/overlay_f2e', exist_ok=True)  # 为重叠图像创建输出文件夹
-    
-    warped_images = []
-    for i, img in enumerate(tqdm(all_images, desc="变形处理")):
-        # 创建映射矩阵 (float32类型)
-        map_x_float = map_x.astype(np.float32)
-        map_y_float = map_y.astype(np.float32)
-        # 使用OpenCV的remap函数进行图像变形
-        warped = cv2.remap(img, map_x_float, map_y_float, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
-        # 创建有效区域掩码
-        mask = ((map_x >= 0) & (map_x < img.shape[1]) & 
-                (map_y >= 0) & (map_y < img.shape[0]))
-        mask = mask.astype(np.uint8) * 255
-        # 应用掩码
-        result = cv2.bitwise_and(warped, warped, mask=mask)
-        warped_images.append(result)
-        # 获取文件名（不包含路径和扩展名）
-        base_name = os.path.splitext(os.path.basename(flir_files[i]))[0]
-        # 保存结果
-        cv2.imwrite(f'Outputs/flir/flir_in_event_view_{base_name}.png', result)
-        # 读取对应的event图像
-        if i < len(event_files):
-            event_img = cv2.imread(event_files[i], cv2.IMREAD_GRAYSCALE)
-            # 创建彩色重叠图像
-            overlay_img = np.zeros((event_h, event_w, 3), dtype=np.uint8)
-            # 将变形后的FLIR图像放在绿色通道
-            overlay_img[:, :, 1] = result
-            # 将event图像放在蓝色通道
-            overlay_img[:, :, 0] = event_img
-            # 保存重叠图像
-            cv2.imwrite(f'Outputs/overlay_f2e/overlay_{base_name}.png', overlay_img)
-            # 可选：创建带有标签的可视化图像
-            vis_img = np.zeros((event_h + 30, event_w, 3), dtype=np.uint8)
-            vis_img[:event_h, :, :] = overlay_img
-    print("\n处理完成！结果已保存到 Outputs 文件夹")
+
+    print("\n处理完成！结果已保存到 projection_outputs 文件夹")
 if __name__ == "__main__":
     main()

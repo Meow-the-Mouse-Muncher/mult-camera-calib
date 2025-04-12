@@ -1,29 +1,19 @@
-# 标定流程
-
-## 使用e2calib压帧
-
-1. 通过read_raw.py将.raw文件转为.h5文件
-
-2. 使用./python/run_reconstruction.py对上步处理好的.h5文件进行压帧重建，分为按频率重建和按触发时间戳重建
-
-   - 按频率重建
-
-     修改`freq_hz`为你实际的频率，不需要格外设置
-
-   - 按触发时间戳重建
-
-     需要`timestamps_file`，格式为txt，每一行为具体触发时间，在run_reconstruction.py中把相应代码注释解除，并将`freq_hz`注释掉
-
-## 直接对.raw压帧
-
-使用./python/yazhen.py进行压帧，代码比较简单，直接使用即可
-
-## 使用matlab进行标定（固定内参版）
-
-1.使用matlab自带工具箱进行内参标定，使用savemat.m存为.mat文件，maltab文件夹中的camera_intrinsics0.mat和camera_intrinsics1.mat分别是event，flir两个相机的内参
-
-2.使用calib.m进行标定
-
-3.使用projection.m进行红蓝映射观察标定结果  
-ps： matlab代码为屎山代码，请务必按照格式使用0为event，1为flir,而且只有投影矩阵是可以使用的，外参不能直接使用！！！！
-ps：也有python的投影变换版本
+## 数据预处理
+1. raw_2_gray.py  原始图像转灰度图  存储到data目录
+2. projetion_f2e.py  flir投影到event视角 存储到projection_outputs目录
+3. colmap  1800x1800原图重建但是有些图有问题，需要切分事件和图像段落 colmap/0000/001 这种目录
+4. mono_refocus.py  event视角下的图refoucs 存储到result目录
+4. 数据集设置 假如说30张图为一组，为了所有的图都用上，需要大概60张图重建。然后中间30张的事件流和时间戳，refocus之后保存事件帧和图像
+*ps：为了重建，colmap使用的图像从1开始命名，其他从0开始命名*
+## colmap 设置参数
+flir内参 fx fy cx cy
+data4.2 
+7191.73748782809,7190.76441594966,897.056114098032,862.573591961378
+event 内参
+3463.13471858099,3463.11625407825,347.866576798087, 325.714566240859
+重建设置
+init_max_forward_motion  1.0
+init_min_tri_angle  0.5
+输出格式
+图像的重建姿态定义为从世界坐标系到相机坐标系的投影，利用四元数（QW,QX,QY,QZ）以及旋转向量（TX,TY,TZ）表示。	
+图像的重建姿态是使用四元数（QW、QX、QY、QZ）和平移矢量（TX、TY、TZ）从世界坐标系到图像的摄像机坐标系的投影。	
