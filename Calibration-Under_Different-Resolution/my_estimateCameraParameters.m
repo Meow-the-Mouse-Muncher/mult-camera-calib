@@ -261,7 +261,9 @@ else % 2-camera stereo
     ip2=imagePoints{2};
     
     % 新代码：使用固定内参的优化方法
-    estimationErrors = optimizeExtrinsicsOnly(cameraParams, ip1(:, :, imagesUsed), ip2(:, :, imagesUsed), shouldComputeErrors);
+    [stereoParams,estimationErrors] = optimizeExtrinsicsOnly(cameraParams, ip1(:, :, imagesUsed), ip2(:, :, imagesUsed), shouldComputeErrors);
+    clear cameraParams ;
+    cameraParams = stereoParams;
     % estimationErrors = refine(cameraParams, ip1(:, :, imagesUsed), ip2(:, :, imagesUsed), shouldComputeErrors);
     
 end
@@ -673,8 +675,8 @@ translationVectors = zeros(numImages, 3);
 % For each set of extrinsics, compute R (rotation) and T (translation)
 % between the two cameras.
 for i = 1:numImages
-    R = cameraParameters2.RotationMatrices(:, :, i)' * ...
-        cameraParameters1.RotationMatrices(:, :, i);
+    R = cameraParameters2.RotationMatrices(:, :, i)* ...
+        cameraParameters1.RotationMatrices(:, :, i)';
     rotationVectors(i, :) = vision.internal.calibration.rodriguesMatrixToVector(R);
     translationVectors(i, :) = (cameraParameters2.TranslationVectors(i, :)' - ...
         R * cameraParameters1.TranslationVectors(i, :)')';
@@ -702,7 +704,7 @@ percentages = [0, 0.25, .5, 1];
 progressBar = vision.internal.calibration.CalibrationProgressBar(isEnabled,...
     messages, percentages);
 %--------------------------------------------------------------------------
-function errors = optimizeExtrinsicsOnly(stereoParams, imagePoints1, imagePoints2, shouldComputeErrors)
+function [stereoParams,errors] = optimizeExtrinsicsOnly(stereoParams, imagePoints1, imagePoints2, shouldComputeErrors)
 % 固定内参，只优化外参的函数
 
 % 保存原始内参
@@ -730,7 +732,7 @@ initialParams = [rotVecs1(:); transVecs1(:); rotVecs2(:); transVecs2(:); vision.
 
 % 设置优化选项
 options = optimoptions('lsqnonlin', 'Algorithm', 'levenberg-marquardt', ...
-                      'Display', 'iter', 'MaxIterations', 60);
+                      'Display', 'iter', 'MaxIterations', 30);
 
 % 定义目标函数：计算重投影误差
 objectiveFunction = @(params) computeReprojectionErrorsFixedIntrinsics(params, ...
@@ -741,26 +743,69 @@ objectiveFunction = @(params) computeReprojectionErrorsFixedIntrinsics(params, .
 
 % 执行非线性最小二乘优化
 [optimizedParams, ~, residuals] = lsqnonlin(objectiveFunction, initialParams, [], [], options);
-
-% 从优化结果中提取外参
 rotVecs1_opt = reshape(optimizedParams(1:3*numImages), numImages, 3);
 transVecs1_opt = reshape(optimizedParams(3*numImages+1:6*numImages), numImages, 3);
 rotVecs2_opt = reshape(optimizedParams(6*numImages+1:9*numImages), numImages, 3);
 transVecs2_opt = reshape(optimizedParams(9*numImages+1:12*numImages), numImages, 3);
 R_opt = vision.internal.calibration.rodriguesVectorToMatrix(optimizedParams(12*numImages+1:12*numImages+3));
 t_opt = optimizedParams(12*numImages+4:12*numImages+6)';
+% 计算每一对图像的重投影误差，找出误差最小的那一对
+minError = inf;
+bestIdx = 1;
+errorPerPair = zeros(numImages, 1);
 
+for i = 1:numImages
+    % 创建临时相机参数对象用于计算误差
+    tempCamParams1 = cameraParameters('IntrinsicMatrix', intrinsics1', ...
+                                 'RotationVectors', rotVecs1_opt(i,:), ...
+                                 'TranslationVectors', transVecs1_opt(i,:), ...
+                                 'RadialDistortion', radialDist1, ...
+                                 'TangentialDistortion', tangentialDist1);
+                             
+    tempCamParams2 = cameraParameters('IntrinsicMatrix', intrinsics2', ...
+                                 'RotationVectors', rotVecs2_opt(i,:), ...
+                                 'TranslationVectors', transVecs2_opt(i,:), ...
+                                 'RadialDistortion', radialDist2, ...
+                                 'TangentialDistortion', tangentialDist2);
+    
+    % 计算当前图像对的重投影误差
+    rotMatrix1 = vision.internal.calibration.rodriguesVectorToMatrix(rotVecs1_opt(i,:));
+    rotMatrix2 = vision.internal.calibration.rodriguesVectorToMatrix(rotVecs2_opt(i,:));
+    
+    projPoints1 = worldToImage(tempCamParams1, rotMatrix1, transVecs1_opt(i,:)', WorldPoints);
+    projPoints2 = worldToImage(tempCamParams2, rotMatrix2, transVecs2_opt(i,:)', WorldPoints);
+    
+    errors1 = imagePoints1(:,:,i) - projPoints1;
+    errors2 = imagePoints2(:,:,i) - projPoints2;
+    
+    totalError = sum(errors1(:).^2) + sum(errors2(:).^2);
+    errorPerPair(i) = totalError;
+    
+    if totalError < minError
+        minError = totalError;
+        bestIdx = i;
+    end
+end
+
+% 输出最佳外参对的索引和误差
+fprintf('最小误差的外参对索引: %d, 误差值: %f\n', bestIdx, minError);
+
+% 使用误差最小的那一对外参计算外参
+best_rotVec1 = rotVecs1_opt(bestIdx,:);
+best_transVec1 = transVecs1_opt(bestIdx,:);
+best_rotVec2 = rotVecs2_opt(bestIdx,:);
+best_transVec2 = transVecs2_opt(bestIdx,:);
 
 % 创建新的相机参数对象
 camParams1 = cameraParameters('IntrinsicMatrix', stereoParams.CameraParameters1.K', ...
-    'RotationVectors', rotVecs1_opt, ...
-    'TranslationVectors', transVecs1_opt, ...
+    'RotationVectors', best_rotVec1, ...
+    'TranslationVectors', best_transVec1, ...
     'RadialDistortion', stereoParams.CameraParameters1.RadialDistortion, ...
     'TangentialDistortion', stereoParams.CameraParameters1.TangentialDistortion);
 
 camParams2 = cameraParameters('IntrinsicMatrix', stereoParams.CameraParameters2.K', ...
-    'RotationVectors', rotVecs2_opt, ...
-    'TranslationVectors', transVecs2_opt, ...
+    'RotationVectors', best_rotVec2, ...
+    'TranslationVectors', best_transVec2, ...
     'RadialDistortion', stereoParams.CameraParameters2.RadialDistortion, ...
     'TangentialDistortion', stereoParams.CameraParameters2.TangentialDistortion);
 
@@ -769,7 +814,8 @@ stereoParams = stereoParameters(camParams1, camParams2, R_opt, t_opt);
 
 % 计算最终误差
 if shouldComputeErrors
-    errors = computeCalibrationErrors(stereoParams, imagePoints1, imagePoints2,worldPoints);
+    %errors = computeCalibrationErrors(stereoParams, imagePoints1, imagePoints2,worldPoints);
+    errors = minError;
 else
     errors = [];
 end

@@ -100,11 +100,11 @@ stereoParams.TangentialDistortion2 = param.CameraParameters2.TangentialDistortio
 % 保存外参
 stereoParams.Rof2 = param.RotationOfCamera2;  % 相机2相对于相机1的旋转矩阵
 stereoParams.Tof2 = param.TranslationOfCamera2;  % 相机2相对于相机1的平移向量
-%stereoParams.R1=param.CameraParameters1.RotationMatrices;  %相机到世界坐标系 3x3x28
-stereoParams.R1 = permute(param.CameraParameters1.RotationMatrices, [3,1,2]);
-stereoParams.T1=param.CameraParameters1.TranslationVectors';
-stereoParams.R2=permute(param.CameraParameters2.RotationMatrices, [3,1,2]);
-stereoParams.T2=param.CameraParameters2.TranslationVectors';
+%stereoParams.R1=param.CameraParameters1.RotationMatrices;  %相机到世界坐标系 3x3
+stereoParams.R1 = param.CameraParameters1.RotationMatrices;
+stereoParams.T1 = param.CameraParameters1.TranslationVectors';
+stereoParams.R2 = param.CameraParameters2.RotationMatrices;
+stereoParams.T2 = param.CameraParameters2.TranslationVectors';
 
 % 保存其他有用信息
 stereoParams.WorldPoints = param.WorldPoints;  % 世界坐标点
@@ -116,32 +116,11 @@ save('./stereoParams.mat', 'stereoParams');
 fprintf('相机标定参数已保存到 stereoParams.mat\n');
 %-----------------------------------------------------------------------------------------------%
 
-% View reprojection errors
-h1=figure; showReprojectionErrors(param);
 
-% Visualize pattern locations
-h2=figure; showExtrinsics(param, 'CameraCentric');
-
-% Display parameter estimation errors
-%displayErrors(estimationErrors, param);
 
 % You can use the calibration data to undistort images
 I1 = imread(file1{1});
 I2 = imread(file2{1});
-
-D1 = undistortImage(I1, param.CameraParameters1);
-D2 = undistortImage(I2, param.CameraParameters2);
-
-figure;subplot(1,2,1);imshow(I1);
-subplot(1,2,2);imshow(I2);
-figure;subplot(1,2,1);imshow(D1);
-subplot(1,2,2);imshow(D2);
-
-% You can use the calibration data to rectify stereo images.
-[J1, J2] = my_rectifyStereoImages(I1, I2, param,'OutputView','full');
-figure;imshowpair(J1,J2,'falsecolor','ColorChannels','red-cyan');
-
-
 % select displayed checkeroard detection point grount truth 
 % estimated point positions and camera positions.
 cno=1;
@@ -153,14 +132,14 @@ grid on;
 plot3(Wpoints(:,1),Wpoints(:,2),Wpoints(:,3),'b.','MarkerSize',20)
 
 K1=param.CameraParameters1.IntrinsicMatrix';
-R1=param.CameraParameters1.RotationMatrices(:,:,cno)';
-T1=param.CameraParameters1.TranslationVectors(cno,:)';
+R1=param.CameraParameters1.RotationMatrices';
+T1=param.CameraParameters1.TranslationVectors';
 
 Lcam=K1*[R1 T1];
 
 K2=param.CameraParameters2.IntrinsicMatrix';
-R2=param.CameraParameters2.RotationMatrices(:,:,cno)';
-T2=param.CameraParameters2.TranslationVectors(cno,:)';
+R2=param.CameraParameters2.RotationMatrices';
+T2=param.CameraParameters2.TranslationVectors';
 
 
 Rcam=K2*[R2 T2];
