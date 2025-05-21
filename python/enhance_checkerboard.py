@@ -35,17 +35,17 @@ def crop_image(image_path, output_path):
 # 用法示例
 input_image = '001.jpg'  # 替换为你的图片名
 output_image = 'enhanced_' + input_image
-image_flies = os.listdir('./')
+image_flies = os.listdir('../flir_result')
 for image_file in image_flies:
-    if image_file.endswith('.jpg'):
-        input_image = image_file
+    if image_file.endswith('.png'):
+        input_image = os.path.join('../flir_result', image_file)  # 替换为你的图片路径 image_file
         output_image = 'enhanced_' + input_image
         enhance_checkerboard(input_image, output_image)
 
 
-rgb_images = os.listdir('./rgb/')
-for rgb_image in rgb_images:
-    input_image = rgb_image
-    output_image = 'enhanced_' + input_image
-    crop_image(input_image, output_image)
+# rgb_images = os.listdir('../rgb/')
+# for rgb_image in rgb_images:
+#     input_image = rgb_image
+#     output_image = 'enhanced_' + input_image
+#     crop_image(input_image, output_image)
 
