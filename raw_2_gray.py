@@ -75,7 +75,7 @@ def convert_rg8_to_gray(input_path, output_folder=None):
 def main():
     # 创建命令行参数解析器
     parser = argparse.ArgumentParser(description='将RG8格式的图像转换为RGB格式')
-    parser.add_argument('--input_path', default='./data_4.7',help='输入文件路径，包含images.raw文件')
+    parser.add_argument('--input_path', default='./data_5.18',help='输入文件路径，包含images.raw文件')
     parser.add_argument('--output', '-o', default='data',help='输出文件夹路径（可选）')
     
     # 解析命令行参数

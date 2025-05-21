@@ -55,27 +55,28 @@ fprintf('从flir_result文件夹中找到%d张图片\n', length(file1));
 [imagePoints{2}, boardSize, imagesUsed2] = detectCheckerboardPoints(file2);
 
 % Generate world coordinates of the checkerboards keypoints
-squareSize = 125.5;  % in units of 'mm'
+squareSize = 126.0;  % in units of 'mm'
 worldPoints = generateCheckerboardPoints(boardSize, squareSize);
 % FLIR相机的内参矩阵
 K1 = [
-    7191.73748782809,    0,                  897.056114098032;
-    0,                7190.76441594966,      862.573591961378;
+    3648.78854414093,    0,                  904.543322329779;
+    0,                3648.39562423806,      894.768914904924;
     0,                  0,                       1
 ];
 
 % EVK相机的内参矩阵
 K2 = [
-    3463.13471858099,    0,                   347.866576798087;
-    0,                3463.11625407825,       325.714566240859;
+    1728.88831159968,    0,                   317.323264072087;
+    0,               1728.72099673020,       303.160708949470;
     0,                   0,                          1
 ];
 
+
 % 畸变参数 [k1, k2] - 径向畸变系数
 % FLIR相机的畸变参数
-radialDistortion1 = [0.22454997653726924, 7.052851787022564];
+radialDistortion1 = [-0.146464825818455,0.229610563459497];
 % EVK相机的畸变参数
-radialDistortion2 = [-0.22322802123900995, 7.461283422747821];
+radialDistortion2 = [-0.0815010620447108,-0.347333976230105];
 
 [param, pairsUsed, estimationErrors] = my_estimateCameraParameters(imagePoints, worldPoints, ...
     'EstimateSkew', false, 'EstimateTangentialDistortion', false, ...
@@ -102,6 +103,8 @@ stereoParams.Rof2 = param.RotationOfCamera2;  % 相机2相对于相机1的旋转
 stereoParams.Tof2 = param.TranslationOfCamera2;  % 相机2相对于相机1的平移向量
 %stereoParams.R1=param.CameraParameters1.RotationMatrices;  %相机到世界坐标系 3x3
 stereoParams.R1 = param.CameraParameters1.RotationMatrices;
+
+
 stereoParams.T1 = param.CameraParameters1.TranslationVectors';
 stereoParams.R2 = param.CameraParameters2.RotationMatrices;
 stereoParams.T2 = param.CameraParameters2.TranslationVectors';
@@ -119,8 +122,8 @@ fprintf('相机标定参数已保存到 stereoParams.mat\n');
 
 
 % You can use the calibration data to undistort images
-I1 = imread(file1{1});
-I2 = imread(file2{1});
+I1 = imread(file1{13});
+I2 = imread(file2{13});
 % select displayed checkeroard detection point grount truth 
 % estimated point positions and camera positions.
 cno=1;

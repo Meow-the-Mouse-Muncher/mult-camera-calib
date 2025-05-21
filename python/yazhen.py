@@ -37,7 +37,7 @@ def parse_argument():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ## dir params
     parser.add_argument('--raw_file_dir', type=str,
-                        default='../data3.22/',
+                        default='../data_5.18/',
                         help='The path of a raw dir')
     parser.add_argument('--save_dir', type=str,
                         default='../image',

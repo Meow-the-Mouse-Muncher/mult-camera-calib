@@ -57,12 +57,12 @@ def batch_crop_images(input_folder, output_folder, x_min, x_max, y_min, y_max):
 
 if __name__ == "__main__":
     # 设置输入文件夹和输出文件夹路径
-    input_folder = "/mnt/sda/XDP/e2calib-main/python/t_11_8/RGB"  # 替换为你的输入文件夹路径
-    output_folder = "/mnt/sda/XDP/e2calib-main/python/t_11_8/RGB_ca"  # 替换为你的输出文件夹路径
+    input_folder = "./flir_result"  # 替换为你的输入文件夹路径
+    output_folder = "./flir_result_1"  # 替换为你的输出文件夹路径
     
     # 设置截取区间
-    x_min, x_max = 600, 1200  # 设置你想截取的 x 轴范围
-    y_min, y_max = 600, 1200  # 设置你想截取的 y 轴范围
+    x_min, x_max = 324, 2124  # 设置你想截取的 x 轴范围
+    y_min, y_max = 124, 1924  # 设置你想截取的 y 轴范围
 
     # 执行批量截取操作
     batch_crop_images(input_folder, output_folder, x_min, x_max, y_min, y_max)
