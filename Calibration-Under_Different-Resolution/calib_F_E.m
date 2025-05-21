@@ -59,8 +59,8 @@ squareSize = 126.0;  % in units of 'mm'
 worldPoints = generateCheckerboardPoints(boardSize, squareSize);
 % FLIR相机的内参矩阵
 K1 = [
-    3648.78854414093,    0,                  904.543322329779;
-    0,                3648.39562423806,      894.768914904924;
+   3648.36514063469,    0,                  905.531445408041;
+    0,                3648.00269318847,      895.269236095198;
     0,                  0,                       1
 ];
 
@@ -122,8 +122,8 @@ fprintf('相机标定参数已保存到 stereoParams.mat\n');
 
 
 % You can use the calibration data to undistort images
-I1 = imread(file1{13});
-I2 = imread(file2{13});
+I1 = imread(file1{14});
+I2 = imread(file2{14});
 % select displayed checkeroard detection point grount truth 
 % estimated point positions and camera positions.
 cno=1;
