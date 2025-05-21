@@ -1,3 +1,10 @@
+## 标定处理
+1. 压帧-使用./python/yazhen.py得到事件帧
+2. 对flir图像进行裁剪-crop_images.py
+3. thermal 进行旋转-rotate_images.py
+4. matlab进行单目标定 然后在calib_F_I.m  calib_F_E.m填上内参
+5. matlab进行标定-calib_F_I.m  calib_F_E.m
+6. 保存文件 stereoParams_RGB 和stereoParams_thermal
 ## 数据预处理
 1. raw_2_gray.py  原始图像转灰度图  存储到data目录
 2. projetion_f2e.py  flir投影到event视角 存储到projection_outputs目录
