@@ -37,7 +37,7 @@ def parse_argument():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ## dir params
     parser.add_argument('--raw_file_dir', type=str,
-                        default='../data_5.18/',
+                        default='./BIAODING_05_29/',
                         help='The path of a raw dir')
     parser.add_argument('--save_dir', type=str,
                         default='../image',
@@ -104,8 +104,8 @@ def main():
                 # 首先对原始事件数据进行坐标平移
                 x_min = evs['x'].min()
                 y_min = evs['y'].min()
-                evs['x'] = evs['x'] - x_min
-                evs['y'] = evs['y'] - y_min
+                evs['x'] = evs['x'] - 340
+                evs['y'] = evs['y'] - 60 
                 # 应用过滤器
                 if filter_type != Filter.NONE:
                     filters[filter_type].process_events(evs, events_buf)

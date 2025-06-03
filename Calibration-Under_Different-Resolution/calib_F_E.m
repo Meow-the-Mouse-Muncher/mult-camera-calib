@@ -7,7 +7,7 @@ close all
 
 % 1-flir 2-evk
 % 读取evk_result文件夹中的所有图片
-evkDir = 'evk_result';
+evkDir = 'event';
 evkFiles = dir(fullfile(evkDir, '*.bmp'));
 if isempty(evkFiles)
     evkFiles = dir(fullfile(evkDir, '*.jpg'));
@@ -17,7 +17,7 @@ if isempty(evkFiles)
 end
 
 % 读取flir_result文件夹中的所有图片
-flirDir = 'flir_result';
+flirDir = 'flir-event';
 flirFiles = dir(fullfile(flirDir, '*.bmp'));
 if isempty(flirFiles)
     flirFiles = dir(fullfile(flirDir, '*.jpg'));
@@ -59,24 +59,24 @@ squareSize = 126.0;  % in units of 'mm'
 worldPoints = generateCheckerboardPoints(boardSize, squareSize);
 % FLIR相机的内参矩阵
 K1 = [
-   3648.36514063469,    0,                  905.531445408041;
-    0,                3648.00269318847,      895.269236095198;
+   3653.25566560442,    0,                  915.409511717337;
+    0,                3651.46376148352,      877.707297841537;
     0,                  0,                       1
 ];
 
 % EVK相机的内参矩阵
 K2 = [
-    1728.88831159968,    0,                   317.323264072087;
-    0,               1728.72099673020,       303.160708949470;
+    1755.44073514260,    0,                  318.374004280142;
+    0,               1754.58574195715,       293.312723627602;
     0,                   0,                          1
 ];
 
 
 % 畸变参数 [k1, k2] - 径向畸变系数
 % FLIR相机的畸变参数
-radialDistortion1 = [-0.146464825818455,0.229610563459497];
+radialDistortion1 = [-0.157414231108809,0.328213958313925];
 % EVK相机的畸变参数
-radialDistortion2 = [-0.0815010620447108,-0.347333976230105];
+radialDistortion2 = [-0.110800662548499,0.576532212622538];
 
 [param, pairsUsed, estimationErrors] = my_estimateCameraParameters(imagePoints, worldPoints, ...
     'EstimateSkew', false, 'EstimateTangentialDistortion', false, ...

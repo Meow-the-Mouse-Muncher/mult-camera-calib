@@ -24,27 +24,32 @@ def undistort_image(img, K, dist_coeffs):
 def main():
     
     # 加载相机参数
-    stereo_params = io.loadmat('./data_4.2/stereo_camera_parameters.mat')['stereo_params']
+    stereo_params = io.loadmat('./stereoParams_FE.mat')['stereoParams']
     
     # 提取相机内参和畸变系数
     # 提取相机内参和畸变系数
-    K_flir = stereo_params['K2'][0, 0]  
-    K_event = stereo_params['K1'][0, 0]  
+    K_flir = stereo_params['K1'][0, 0]  
+    K_event = stereo_params['K2'][0, 0]  
     dist_flir = np.hstack([
-        stereo_params['RadialDistortion2'][0, 0].flatten(), 
-        stereo_params['TangentialDistortion2'][0, 0].flatten()
-    ])
-    
-    dist_event = np.hstack([
         stereo_params['RadialDistortion1'][0, 0].flatten(), 
         stereo_params['TangentialDistortion1'][0, 0].flatten()
     ])
+    
+    dist_event = np.hstack([
+        stereo_params['RadialDistortion2'][0, 0].flatten(), 
+        stereo_params['TangentialDistortion2'][0, 0].flatten()
+    ])
     # 获取相机投影矩阵
-    P_flir = stereo_params['P_flir'][0, 0]  # 世界到flir相机投影矩阵
-    P_event = stereo_params['P_event'][0, 0]  # 世界到event相机投影矩阵
+    R_flir = stereo_params['R1'][0, 0]  # flir相机的旋转矩阵
+    R_event = stereo_params['R2'][0, 0]  # event相机的旋转矩阵
+    T_flir = stereo_params['T1'][0, 0]  # flir相机的平移向量
+    T_event = stereo_params['T2'][0, 0]  # event相机的平移向量
+
+    P_flir = K_flir @ np.hstack([R_flir, T_flir.reshape(3, 1)])  # 世界到flir相机投影矩阵
+    P_event = K_event @ np.hstack([R_event, T_event.reshape(3, 1)])  # 世界到event相机投影矩阵
 
     # 获取所有子目录
-    base_path ='data'
+    base_path ='./data'
     subdirs = [x for x in os.listdir(base_path)]
     subdirs.sort(key=lambda x: tuple(map(int, x.split())))
     flir_h, flir_w = 1800,1800
@@ -140,19 +145,23 @@ def main():
     
     # 处理所有flir图像
     for flir_subdir in tqdm(subdirs, desc="处理子文件夹"):
-        flir_dir = os.path.join(base_path, flir_subdir)
+        flir_dir = os.path.join(base_path, flir_subdir, 'flir')
         flir_files = glob.glob(os.path.join(flir_dir, '*.png'))
         flir_files.sort(key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
-        event_file = os.path.join(flir_dir, 'events.raw')  # event数据文件
+        num = len(flir_files)
+        event_file = os.path.join(base_path, flir_subdir, 'event', 'events.raw')  # event数据文件
         triggers = None
         # 读取触发时间 txt文件
         exposure_times =  np.loadtxt(os.path.join(base_path,flir_subdir, 'exposure_times.txt')).reshape(-1)
+        print(f"找到 {len(exposure_times)} 个曝光时间")
         with RawReader(event_file, do_time_shifting=False) as ev_data:
             while not ev_data.is_done():
                 ev_data.load_n_events(1000000)
             triggers = ev_data.get_ext_trigger_events()
             triggers = triggers[triggers['p'] == 0].copy()
-            triggers['t'] = triggers['t'] + exposure_times 
+            print(f"读取到 {len(triggers)} 个触发事件")
+            triggers = triggers[:num]
+            triggers['t'] = triggers['t']+ exposure_times
         event_frames = []
         # Instantiate the frame generator
         height, width = 600, 600
@@ -162,8 +171,8 @@ def main():
         for evs in mv_iterator:
             x_min = evs['x'].min()
             y_min = evs['y'].min()
-            evs['x'] = evs['x'] - x_min
-            evs['y'] = evs['y'] - y_min # Dispatch system events to the window
+            evs['x'] = evs['x'] - 340
+            evs['y'] = evs['y'] - 60 
             on_demand_gen.process_events(evs)  # Feed events to the frame generator
         for i, trigger_time in enumerate(tqdm(triggers, desc="生成事件帧")):
             # 创建帧缓冲区

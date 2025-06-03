@@ -1,5 +1,7 @@
 data*
 *image
 *result
-matlab/Outputs
-Outputs*
+*Outputs*
+flir*
+EFrame*
+*thermal*

@@ -23,7 +23,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Metavision Simple Viewer sample.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
-        '-i', '--input-event-file', dest='event_file_path', default="data/2025_04_02_16_46_18/events.raw",
+        '-i', '--input-event-file', dest='event_file_path', default="./event.raw",
         help="Path to input event file (RAW, DAT or HDF5). If not specified, the camera live stream is used. "
         "If it's a camera serial number, it will try to open that camera instead.")
     args = parser.parse_args()

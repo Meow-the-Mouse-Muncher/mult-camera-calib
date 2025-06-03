@@ -134,8 +134,8 @@ def event_refocus(event_path,exposure_times_path,name_list,R_matrix,T_matrix,K,d
     for evs in mv_iterator:
         x_min = evs['x'].min()
         y_min = evs['y'].min()
-        evs['x'] = evs['x'] - x_min
-        evs['y'] = evs['y'] - y_min 
+        evs['x'] = evs['x'] - 340
+        evs['y'] = evs['y'] - 60 
         all_events.append(evs)
     # 合并所有事件批次
     all_x = np.concatenate([ev['x'] for ev in all_events])

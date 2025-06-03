@@ -45,28 +45,34 @@ def create_event_frame(events, height, width, accumulation_time_us=10000):
 def main():
     
     # 加载相机参数
-    stereo_params = io.loadmat('./data_4.2/stereo_camera_parameters.mat')['stereo_params']
+    stereo_params = io.loadmat('./stereoParams_FE.mat')['stereoParams']
     
     # 提取相机内参和畸变系数
     # 提取相机内参和畸变系数
-    K_flir = stereo_params['K2'][0, 0]  
-    K_event = stereo_params['K1'][0, 0]  
+    K_flir = stereo_params['K1'][0, 0]  
+    K_event = stereo_params['K2'][0, 0]  
     dist_flir = np.hstack([
-        stereo_params['RadialDistortion2'][0, 0].flatten(), 
-        stereo_params['TangentialDistortion2'][0, 0].flatten()
-    ])
-    
-    dist_event = np.hstack([
         stereo_params['RadialDistortion1'][0, 0].flatten(), 
         stereo_params['TangentialDistortion1'][0, 0].flatten()
     ])
+    
+    dist_event = np.hstack([
+        stereo_params['RadialDistortion2'][0, 0].flatten(), 
+        stereo_params['TangentialDistortion2'][0, 0].flatten()
+    ])
     # 获取相机投影矩阵
-    P_flir = stereo_params['P_flir'][0, 0]  # 世界到flir相机投影矩阵
-    P_event = stereo_params['P_event'][0, 0]  # 世界到event相机投影矩阵
+    R_flir = stereo_params['R1'][0, 0]  # flir相机的旋转矩阵
+    R_event = stereo_params['R2'][0, 0]  # event相机的旋转矩阵
+    T_flir = stereo_params['T1'][0, 0]  # flir相机的平移向量
+    T_event = stereo_params['T2'][0, 0]  # event相机的平移向量
 
+    P_flir = K_flir @ np.hstack([R_flir, T_flir.reshape(3, 1)])  # 世界到flir相机投影矩阵
+    P_event = K_event @ np.hstack([R_event, T_event.reshape(3, 1)])  # 世界到event相机投影矩阵
+
+   
     # 获取所有子目录
     floder = None
-    base_path =f'./colmap'
+    base_path =f'./data'
     floders = [x for x in os.listdir(base_path)]
     flir_h, flir_w = 1800,1800
     event_h, event_w = 600,600
@@ -161,38 +167,38 @@ def main():
     
     # 处理所有flir图像
     for floder in tqdm(floders,desc="处理文件夹"):
-        subdirs = [x for x in os.listdir(os.path.join(base_path, floder))]
-        subdirs.sort(key=lambda x: tuple(map(int, x.split())))
-        for flir_subdir in subdirs:
-            flir_dir = os.path.join(base_path,floder,flir_subdir)
-            flir_files = glob.glob(os.path.join(flir_dir, '*.png'))
-            flir_files.sort(key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
-            all_images = []
-            for flir_file in flir_files:
-                #灰度图
-                I_flir = cv2.imread(flir_file, cv2.IMREAD_GRAYSCALE)  # 灰度图
-                # 如果图像不是,则调整大小
-                if I_flir.shape[0] != flir_h or I_flir.shape[1] != flir_w:
-                    I_flir = cv2.resize(I_flir, (flir_h, flir_w))
-                # 去畸变
-                I_flir = undistort_image(I_flir, K_flir, dist_event)
-                all_images.append(I_flir)
-            for i, img in enumerate(all_images):
-                os.makedirs(f'projection_outputs/flir/{floder}/{flir_subdir}', exist_ok=True)  # 为flir图像创建输出文件夹
-                # 创建映射矩阵 (float32类型)
-                map_x_float = map_x.astype(np.float32)
-                map_y_float = map_y.astype(np.float32)
-                # 使用OpenCV的remap函数进行图像变形
-                warped = cv2.remap(img, map_x_float, map_y_float, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
-                # 创建有效区域掩码
-                mask = ((map_x >= 0) & (map_x < img.shape[1]) & 
-                        (map_y >= 0) & (map_y < img.shape[0]))
-                mask = mask.astype(np.uint8) * 255
-                # 应用掩码
-                result = cv2.bitwise_and(warped, warped, mask=mask)
-                # 获取文件名（不包含路径和扩展名）
-                # 保存结果
-                cv2.imwrite(f'projection_outputs/flir/{floder}/{flir_subdir}/{i:04d}.png', result)
+        # subdirs = [x for x in os.listdir(os.path.join(base_path, floder))]
+        # subdirs.sort(key=lambda x: tuple(map(int, x.split())))
+        # for flir_subdir in subdirs:
+        flir_dir = os.path.join(base_path,floder, 'flir')
+        flir_files = glob.glob(os.path.join(flir_dir, '*.png'))
+        flir_files.sort(key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
+        all_images = []
+        for flir_file in flir_files:
+            #灰度图
+            I_flir = cv2.imread(flir_file, cv2.IMREAD_GRAYSCALE)  # 灰度图
+            # 如果图像不是,则调整大小
+            if I_flir.shape[0] != flir_h or I_flir.shape[1] != flir_w:
+                I_flir = cv2.resize(I_flir, (flir_h, flir_w))
+            # 去畸变
+            I_flir = undistort_image(I_flir, K_flir, dist_event)
+            all_images.append(I_flir)
+        for i, img in enumerate(all_images):
+            os.makedirs(f'projection_outputs/flir/{floder}', exist_ok=True)  # 为flir图像创建输出文件夹
+            # 创建映射矩阵 (float32类型)
+            map_x_float = map_x.astype(np.float32)
+            map_y_float = map_y.astype(np.float32)
+            # 使用OpenCV的remap函数进行图像变形
+            warped = cv2.remap(img, map_x_float, map_y_float, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+            # 创建有效区域掩码
+            mask = ((map_x >= 0) & (map_x < img.shape[1]) & 
+                    (map_y >= 0) & (map_y < img.shape[0]))
+            mask = mask.astype(np.uint8) * 255
+            # 应用掩码
+            result = cv2.bitwise_and(warped, warped, mask=mask)
+            # 获取文件名（不包含路径和扩展名）
+            # 保存结果
+            cv2.imwrite(f'projection_outputs/flir/{floder}/{i:04d}.png', result)
 
 
     print("\n处理完成！结果已保存到 projection_outputs 文件夹")

@@ -1,51 +1,45 @@
+import os
+import tqdm
 import cv2
 import numpy as np
-import os
 
-def enhance_checkerboard(image_path, output_path):
-    # 读取灰度图像
-    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        print("无法读取图片")
-        return
+def natural_sort_key(s):
+    import re
+    return [int(text) if text.isdigit() else text.lower()
+            for text in re.split(r'([0-9]+)', s)]
 
-    # 1. CLAHE增强对比度
-    clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8,8))
-    img_clahe = clahe.apply(img)
+def enhance_checkerboard_simple(image):
+    """
+    只做局部对比度增强（CLAHE），不二值化，保留灰度细节
+    """
+    # 1. CLAHE自适应直方图均衡化，增强局部对比度
+    clahe = cv2.createCLAHE(clipLimit=8.0, tileGridSize=(8, 8))
+    eq = clahe.apply(image)
+    # 2. 轻微去噪
+    blur = cv2.GaussianBlur(eq, (3, 3), 0)
+    # 3. 不做二值化，直接返回增强后的灰度图
+    return blur
 
-    # 2. 轻微锐化（可选）
-    kernel = np.array([[0, -1, 0],
-                       [-1, 5, -1],
-                       [0, -1, 0]])
-    img_sharp = cv2.filter2D(img_clahe, -1, kernel)
+def batch_enhance_checkerboard(input_folder, output_folder):
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    all_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
+    image_files = sorted(all_files, key=natural_sort_key)
+    print(f"找到 {len(image_files)} 张图片，开始增强...")
 
-    # 保存结果
-    cv2.imwrite(output_path, img_sharp)
-    print(f"增强后的图片已保存至: {output_path}")
-def crop_image(image_path, output_path):
-    # 读取图像 
-    img = cv2.imread(image_path)
-    if img.height != 1800 or img.width != 1800:
-        star_width = (img.width - 1800) // 2
-        star_height = (img.height - 1800) // 2
-        img = img[star_height:star_height + 1800, star_width:star_width + 1800]
-        cv2.imwrite(output_path, img)
-        print(f"裁剪后的图片已保存至: {output_path}")
+    for idx, image_file in tqdm.tqdm(enumerate(image_files), desc="增强棋盘格", ncols=100, unit="张"):
+        input_path = os.path.join(input_folder, image_file)
+        output_path = os.path.join(output_folder, f"{idx+1:04d}.png")
+        img = cv2.imread(input_path, cv2.IMREAD_GRAYSCALE)
+        if img is None or img.size == 0:
+            print(f"跳过无效图片: {image_file}")
+            continue
+        enhanced = enhance_checkerboard_simple(img)
+        enhanced = cv2.rotate(enhanced, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        cv2.imwrite(output_path, enhanced)
+    print(f"全部处理完成，结果保存在: {output_folder}")
 
-# 用法示例
-input_image = '001.jpg'  # 替换为你的图片名
-output_image = 'enhanced_' + input_image
-image_flies = os.listdir('../flir_result')
-for image_file in image_flies:
-    if image_file.endswith('.png'):
-        input_image = os.path.join('../flir_result', image_file)  # 替换为你的图片路径 image_file
-        output_image = 'enhanced_' + input_image
-        enhance_checkerboard(input_image, output_image)
-
-
-# rgb_images = os.listdir('../rgb/')
-# for rgb_image in rgb_images:
-#     input_image = rgb_image
-#     output_image = 'enhanced_' + input_image
-#     crop_image(input_image, output_image)
-
+if __name__ == "__main__":
+    input_folder = "./thermal"
+    output_folder = "./thermal_enhanced"
+    batch_enhance_checkerboard(input_folder, output_folder)
