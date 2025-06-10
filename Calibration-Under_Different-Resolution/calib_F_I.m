@@ -119,8 +119,8 @@ fprintf('相机标定参数已保存到 stereoParams.mat\n');
 
 
 % You can use the calibration data to undistort images
-I1 = imread(file1{1});
-I2 = imread(file2{1});
+I1 = imread(file1{4});
+I2 = imread(file2{4});
 % select displayed checkeroard detection point grount truth 
 % estimated point positions and camera positions.
 cno=1;

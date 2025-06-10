@@ -61,8 +61,8 @@ def convert_rg8_to_gray(input_path, output_folder=None):
                 # 转换为RGB
                 rgb_image = cv.cvtColor(bayer_data, bayer_pattern)
                 gray_image = cv.cvtColor(rgb_image, cv.COLOR_RGB2GRAY)
-                clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-                gray_image = clahe.apply(gray_image)
+                # clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+                # gray_image = clahe.apply(gray_image)
                 
                 # 保存转换后的图像
                 output_path = os.path.join(output_folder, f"{i+1:04d}.png")
@@ -86,15 +86,18 @@ def copy_thermal_images(thermal_dir, output_dir):
         return
     
     ensure_dir(output_dir)
-    
-    # 获取所有图像文件
+      # 获取所有图像文件
     image_extensions = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']
     thermal_files = []
     
     for ext in image_extensions:
+        # 搜索小写扩展名
         thermal_files.extend(glob.glob(os.path.join(thermal_dir, f"*{ext}")))
+        # 搜索大写扩展名
         thermal_files.extend(glob.glob(os.path.join(thermal_dir, f"*{ext.upper()}")))
     
+    # 去除重复文件并排序
+    thermal_files = list(set(thermal_files))  # 去重
     thermal_files.sort()  # 按文件名排序
     
     if not thermal_files:
@@ -130,7 +133,7 @@ def copy_thermal_images(thermal_dir, output_dir):
 def main():
     # 创建命令行参数解析器
     parser = argparse.ArgumentParser(description='将RG8格式的图像转换为灰度格式并整理文件结构')
-    parser.add_argument('--input_path', default='./data5.25', help='输入文件路径，包含子目录结构')
+    parser.add_argument('--input_path', default='./data6.4', help='输入文件路径，包含子目录结构')
     parser.add_argument('--output', '-o', default='data', help='输出文件夹路径（可选）')
     parser.add_argument('--copy_thermal', action='store_true', help='是否复制红外图像')
     

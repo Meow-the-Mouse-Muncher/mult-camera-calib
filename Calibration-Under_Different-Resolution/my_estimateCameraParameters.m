@@ -732,7 +732,7 @@ initialParams = [rotVecs1(:); transVecs1(:); rotVecs2(:); transVecs2(:); vision.
 
 % 设置优化选项
 options = optimoptions('lsqnonlin', 'Algorithm', 'levenberg-marquardt', ...
-                      'Display', 'iter', 'MaxIterations', 60,'StepTolerance', 1e-10);
+                      'Display', 'iter', 'MaxIterations', 160,'StepTolerance', 1e-10);
 
 % 定义目标函数：计算重投影误差
 objectiveFunction = @(params) computeReprojectionErrorsFixedIntrinsics(params, ...

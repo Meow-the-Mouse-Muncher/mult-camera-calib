@@ -242,134 +242,34 @@ def event_refocus(event_path,exposure_times_path,name_list,R_matrix,T_matrix,K,d
         
 
 
-# def projection(flir_image):
-#     flir_image = flir_image.cpu().numpy()
-#     # 加载相机参数
-#     stereo_params = io.loadmat('./stereoParams_FE.mat')['stereoParams']
-#     # 提取相机内参和畸变系数
-#     # 提取相机内参和畸变系数
-#     K_flir = stereo_params['K1'][0, 0]  
-#     K_event = stereo_params['K2'][0, 0]  
-#     dist_flir = np.hstack([
-#         stereo_params['RadialDistortion1'][0, 0].flatten(), 
-#         stereo_params['TangentialDistortion1'][0, 0].flatten()
-#     ])
-    
-#     dist_event = np.hstack([
-#         stereo_params['RadialDistortion2'][0, 0].flatten(), 
-#         stereo_params['TangentialDistortion2'][0, 0].flatten()
-#     ])
-#     # 获取相机投影矩阵
-#     R_flir = stereo_params['R1'][0, 0]  # flir相机的旋转矩阵
-#     R_event = stereo_params['R2'][0, 0]  # event相机的旋转矩阵
-#     T_flir = stereo_params['T1'][0, 0]  # flir相机的平移向量
-#     T_event = stereo_params['T2'][0, 0]  # event相机的平移向量
-
-#     P_flir = K_flir @ np.hstack([R_flir, T_flir.reshape(3, 1)])  # 世界到flir相机投影矩阵
-#     P_event = K_event @ np.hstack([R_event, T_event.reshape(3, 1)])  # 世界到event相机投影矩阵
-
-#     N,flir_h, flir_w = flir_image.shape
-#     event_h, event_w = 600,600
-#     x_coords,y_coords = np.meshgrid(np.arange(event_w), np.arange(event_h))
-#     # 默认z平面
-#     Z=0
-#     # 创建均匀坐标 [3, h*w]
-#     p11, p12, p14 = P_event[0, 0], P_event[0, 1], P_event[0, 3]
-#     p21, p22, p24 = P_event[1, 0], P_event[1, 1], P_event[1, 3]
-#     p31, p32, p34 = P_event[2, 0], P_event[2, 1], P_event[2, 3]
-#     # 获取所有像素坐标
-#     u = x_coords.flatten()
-#     v = y_coords.flatten()
-
-#     batch_size = 100000  # 每批处理的像素点数量
-#     num_batches = (len(u) + batch_size - 1) // batch_size
-    
-#     X_result = np.zeros_like(u)
-#     Y_result = np.zeros_like(u)
-#     lambda_result = np.zeros_like(u)
-    
-#     for i in range(num_batches):
-#         start_idx = i * batch_size
-#         end_idx = min((i + 1) * batch_size, len(u))
-        
-#         # 当前批次的像素坐标
-#         u_batch = u[start_idx:end_idx]
-#         v_batch = v[start_idx:end_idx]
-        
-#         # 构建当前批次的系数矩阵 [batch_size, 3, 3]
-#         A_batch = np.zeros((end_idx - start_idx, 3, 3))
-#         A_batch[:, 0, 0] = p11
-#         A_batch[:, 0, 1] = p12
-#         A_batch[:, 0, 2] = -u_batch
-#         A_batch[:, 1, 0] = p21
-#         A_batch[:, 1, 1] = p22
-#         A_batch[:, 1, 2] = -v_batch
-#         A_batch[:, 2, 0] = p31
-#         A_batch[:, 2, 1] = p32
-#         A_batch[:, 2, 2] = -1
-        
-#         # 构建常数向量 [batch_size, 3]
-#         b_batch = np.tile([-p14, -p24, -p34], (end_idx - start_idx, 1))
-        
-#         # 求解当前批次的线性方程组
-#         X_batch = np.linalg.solve(A_batch, b_batch)
-        
-#         # 保存结果
-#         X_result[start_idx:end_idx] = X_batch[:, 0]
-#         Y_result[start_idx:end_idx] = X_batch[:, 1]
-#         lambda_result[start_idx:end_idx] = X_batch[:, 2]
-
-    
-#     # 构建世界坐标 [X,Y,Z,1]
-#     world_coords = np.zeros((4, len(u)))
-#     world_coords[0, :] = X_result
-#     world_coords[1, :] = Y_result
-#     world_coords[2, :] = Z  # Z平面坐标
-#     world_coords[3, :] = 1  # Z平面坐标
-    
-#     # 投影flir相机坐标系
-#     flir_proj = P_flir @ world_coords
-#     flir_proj = flir_proj / flir_proj[2, :]  # 齐次坐标归一化
-    
-#     # 获取映射坐标
-#     map_x = flir_proj[0, :].reshape(event_h, event_w)
-#     map_y = flir_proj[1, :].reshape(event_h, event_w)
-#     map_x_float = map_x.astype(np.float32)
-#     map_y_float = map_y.astype(np.float32)
-#     # 使用OpenCV的remap函数进行图像变形
-#     warped_img = np.zeros((N,event_h, event_w), dtype=np.uint8)
-#     for i in range(N):
-#         img = flir_image[i,...]
-#         img = undistort_image(img, K_flir, dist_event)
-#         # 创建映射矩阵 (float32类型)
-#         map_x_float = map_x.astype(np.float32)
-#         warped = cv2.remap(img, map_x_float, map_y_float, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
-#         # 创建有效区域掩码
-#         mask = ((map_x >= 0) & (map_x < img.shape[1]) & 
-#                 (map_y >= 0) & (map_y < img.shape[0]))
-#         mask = mask.astype(np.uint8) * 255
-#         # 应用掩码
-#         result = cv2.bitwise_and(warped, warped, mask=mask)
-#         warped_img[i,...] = result
-#     return warped_img
 
 if __name__ == '__main__':
-# 4703.863770,4750.683105,750.655371,491.003268
-# 2000 1000 6472.86 6419.42 1000 500
-# 7191.73748782809,7190.76441594966,897.056114098032,862.573591961378
-# 3463.13471858099	0	0
-# 0	3463.11625407825	0
-# 347.866576798087	325.714566240859	1
-    fx,fy,cx,cy= 3463.13471858099,3463.11625407825,347.866576798087, 325.714566240859
-    K=np.array([[3463.13471858099,  0,   0],
-                [0   ,3463.11625407825,  0],
-                [347.866576798087,325.714566240859,1]]).T
-    # K = np.array([[fx,0,cx],[0,fy,cy],[0,0,1]])
-    H, W = 600, 600
+
+    
+
+        # 加载相机参数
+    stereo_params = io.loadmat('./stereoParams_FE.mat')['stereoParams']
+    
+
+    K = stereo_params['K2'][0, 0]  
+    fx,fy,cx,cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
+
+    dist = np.hstack([
+        stereo_params['RadialDistortion2'][0, 0].flatten(), 
+        stereo_params['TangentialDistortion2'][0, 0].flatten()
+    ])
+    stereo_params = io.loadmat('./stereoParams_FI.mat')['stereoParams']
+    # Thermal红外相机参数
+    K_thermal = stereo_params['K2'][0, 0]  
+    dist_thermal = np.hstack([
+        stereo_params['RadialDistortion2'][0, 0].flatten(), 
+        stereo_params['TangentialDistortion2'][0, 0].flatten()
+    ])
+    H, W = 1800, 1800
     folder_path = '0000'
-    sub_floder = '000'
+    sub_floder = '001'
     # 找到中间图像的索引
-    center_idx = 11
+    center_idx = 12
     center_idx = torch.tensor(center_idx, device=device, dtype=torch.int8)
     depth_range = np.arange(30, 600, 1)
     print(f"使用索引 {center_idx} 的图像作为参考图像")
@@ -377,7 +277,7 @@ if __name__ == '__main__':
     os.makedirs(save_path, exist_ok=True)
     event_path =  os.path.abspath(os.path.join(os.path.dirname(__file__), 'data',folder_path,'events.raw'))
     exposure_times_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data',folder_path,'exposure_times.txt'))
-    image_path =  os.path.join(os.path.dirname(__file__),'projection_outputs', 'flir',folder_path,sub_floder)
+    image_path =  os.path.join(os.path.dirname(__file__),'colmap',folder_path,sub_floder)
     extrinsic_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'colmap',folder_path,sub_floder))
     #读取文件夹中的图像序号
     read_image_files = [f for f in os.listdir(image_path) if f.endswith('.jpg') or f.endswith('.png')]
