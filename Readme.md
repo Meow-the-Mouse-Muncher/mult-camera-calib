@@ -6,10 +6,44 @@
 5. matlab进行标定-calib_F_I.m  calib_F_E.m
 6. 保存文件 stereoParams_RGB 和stereoParams_thermal
 ## 数据预处理
-1. raw_2_gray.py  原始图像转灰度图  存储到data目录
-2. projetion_f2e.py  flir投影到event视角 存储到projection_outputs目录
+1. raw_2_gray.py  原始图像转灰度图  存储到data目录，都是原分辨率
+    ```
+        data
+        └── 0000
+            ├── event
+            │   ├── events.raw
+            │   └── exposure_times.txt
+            ├── flir
+            │   ├── 0001.png
+            │   ├── 0002.png
+            │   ├── 0003.png
+            │   └── ...
+            └── theraml
+                ├── 0001.png
+                ├── 0002.png
+                ├── 0003.png
+                └── ...
+    ```
+2. projetion_f2e.py projection_f2ir.py flir/thermal投影到event视角 存储到projection_outputs目录 event自己复制过去，然后data就可以删掉了
+    ```
+        projection_outputs
+        └── 0000
+            ├── event
+            │   ├── events.raw
+            │   └── exposure_times.txt
+            ├── flir
+            │   ├── 0001.png
+            │   ├── 0002.png
+            │   ├── 0003.png
+            │   └── ...
+            └── theraml
+                ├── 0001.png
+                ├── 0002.png
+                ├── 0003.png
+                └── ...
+    ```
 3. colmap  1800x1800原图重建但是有些图有问题，需要切分事件和图像段落 colmap/0000/001 这种目录
-4. mono_refocus.py  event视角下的图refoucs 存储到result目录
+4. mono_refocus.py  event视角下的图refoucs 存储到result目录、缺少一个批量的三相机的refocus的代码   为什么不先重聚焦后投影呢？refocus_projection_f_e.py
 4. 数据集设置 假如说30张图为一组，为了所有的图都用上，需要大概60张图重建。然后中间30张的事件流和时间戳，refocus之后保存事件帧和图像
 *ps：为了重建，colmap使用的图像从1开始命名，其他从0开始命名*
 ## colmap 设置参数

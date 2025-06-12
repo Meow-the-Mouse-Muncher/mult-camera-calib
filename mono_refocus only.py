@@ -16,8 +16,8 @@ import torch
 from torch import Tensor
 import torchvision
 import torch.nn.functional as F
-from metavision_core.event_io import EventsIterator,RawReader
-from metavision_sdk_core import OnDemandFrameGenerationAlgorithm
+# from metavision_core.event_io import EventsIterator,RawReader
+# from metavision_sdk_core import OnDemandFrameGenerationAlgorithm
 from tqdm import tqdm 
 # 自适应直方图均衡化  AHE
 device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -271,7 +271,7 @@ if __name__ == '__main__':
     # 找到中间图像的索引
     center_idx = 12
     center_idx = torch.tensor(center_idx, device=device, dtype=torch.int8)
-    depth_range = np.arange(30, 600, 1)
+    depth_range = np.arange(20, 40, 0.1)
     print(f"使用索引 {center_idx} 的图像作为参考图像")
     save_path =  os.path.abspath(os.path.join(os.path.dirname(__file__), 'results',folder_path,sub_floder))
     os.makedirs(save_path, exist_ok=True)

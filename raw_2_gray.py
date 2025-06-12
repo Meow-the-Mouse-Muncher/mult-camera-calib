@@ -30,6 +30,7 @@ def convert_rg8_to_gray(input_path, output_folder=None):
             # 读取文件头信息
             header = np.fromfile(f, dtype=np.int32, count=5)
             num_images = header[0]
+            print(f"图像数量：{num_images}")
             offset_x = header[1]
             offset_y = header[2]
             width = header[3]
@@ -133,7 +134,7 @@ def copy_thermal_images(thermal_dir, output_dir):
 def main():
     # 创建命令行参数解析器
     parser = argparse.ArgumentParser(description='将RG8格式的图像转换为灰度格式并整理文件结构')
-    parser.add_argument('--input_path', default='./data6.4', help='输入文件路径，包含子目录结构')
+    parser.add_argument('--input_path', default='./data5.27', help='输入文件路径，包含子目录结构')
     parser.add_argument('--output', '-o', default='data', help='输出文件夹路径（可选）')
     parser.add_argument('--copy_thermal', action='store_true', help='是否复制红外图像')
     
