@@ -5,11 +5,16 @@ import glob
 from scipy import io
 from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
+import shutil
 from tqdm import tqdm
 import time
 import torch
 from torch import Tensor
+import sys
 import torchvision
+# sys.path.append("/home/nvidia/openeb/sdk/modules/core/python/pypkg")
+# sys.path.append("/home/nvidia/openeb/build/py3")
+sys.path.append("/usr/lib/python3/dist-packages")
 from metavision_core.event_io import EventsIterator, RawReader
 from metavision_sdk_core import OnDemandFrameGenerationAlgorithm
 
@@ -291,6 +296,7 @@ def main():
         
         # Event数据文件
         event_file = os.path.join(subdir_path, 'event', 'events.raw')
+        event_dir = os.path.join(subdir_path, 'event')
         
         if not flir_files:
             print(f"警告：在 {flir_dir} 中未找到FLIR图像")
@@ -307,10 +313,40 @@ def main():
         num_images = min(len(flir_files), len(thermal_files))
         print(f"处理子目录 {subdir}：{num_images} 张图像")
         
+        # 创建输出目录
+        os.makedirs(f'projection_outputs/flir/{subdir}', exist_ok=True)
+        os.makedirs(f'projection_outputs/thermal_to_flir/{subdir}', exist_ok=True)
+        os.makedirs(f'projection_outputs/thermal/{subdir}', exist_ok=True)
+        os.makedirs(f'projection_outputs/event/{subdir}', exist_ok=True)
+        os.makedirs(f'projection_outputs/overlay_all/{subdir}', exist_ok=True)
+        os.makedirs(f'projection_outputs/overlay_flir_event/{subdir}', exist_ok=True)
+        
+        # === 复制Event文件夹内容 ===
+        output_event_dir = f'projection_outputs/event/{subdir}'
+        print(f"复制Event数据从 {event_dir} 到 {output_event_dir}")
+        
+        # 复制events.raw文件
+        if os.path.exists(event_file):
+            shutil.copy2(event_file, os.path.join(output_event_dir, 'events.raw'))
+            print(f"  - 复制 events.raw")
+        
+        # 复制exposure_times.txt文件
+        exposure_times_file = os.path.join(event_dir, 'exposure_times.txt')
+        if os.path.exists(exposure_times_file):
+            shutil.copy2(exposure_times_file, os.path.join(output_event_dir, 'exposure_times.txt'))
+            print(f"  - 复制 exposure_times.txt")
+        
+        # 复制其他Event相关文件（如果存在）
+        for item in os.listdir(event_dir):
+            item_path = os.path.join(event_dir, item)
+            if os.path.isfile(item_path) and item not in ['events.raw', 'exposure_times.txt']:
+                shutil.copy2(item_path, os.path.join(output_event_dir, item))
+                print(f"  - 复制 {item}")
+        
         # === 处理Event数据 ===
         try:
             # 读取曝光时间
-            exposure_times = np.loadtxt(os.path.join(subdir_path, 'exposure_times.txt')).reshape(-1)
+            exposure_times = np.loadtxt(exposure_times_file).reshape(-1)
             print(f"找到 {len(exposure_times)} 个曝光时间")
             
             # 读取触发事件
@@ -320,7 +356,8 @@ def main():
                 triggers = ev_data.get_ext_trigger_events()
                 triggers = triggers[triggers['p'] == 0].copy()
                 print(f"读取到 {len(triggers)} 个触发事件")
-                triggers = triggers[:num_images]
+                if len(triggers) ==151:
+                    triggers = triggers[1:]  # 之后
                 triggers['t'] = triggers['t'] + exposure_times
             
             # 生成事件帧
@@ -328,16 +365,9 @@ def main():
             
         except Exception as e:
             print(f"处理Event数据时出错: {e}")
+            print(f"文件夹 {subdir} 的Event处理失败，创建空白帧")
             # 如果Event处理失败，创建空白帧
             event_frames = [np.zeros((event_h, event_w, 3), np.uint8) for _ in range(num_images)]
-        
-        # 创建输出目录
-        os.makedirs(f'projection_outputs/flir_to_event/{subdir}', exist_ok=True)
-        os.makedirs(f'projection_outputs/thermal_to_flir/{subdir}', exist_ok=True)
-        os.makedirs(f'projection_outputs/thermal_to_event/{subdir}', exist_ok=True)
-        os.makedirs(f'projection_outputs/event/{subdir}', exist_ok=True)
-        os.makedirs(f'projection_outputs/overlay_all/{subdir}', exist_ok=True)
-        os.makedirs(f'projection_outputs/overlay_flir_event/{subdir}', exist_ok=True)
         
         # 处理图像对
         for i in range(num_images):
@@ -371,7 +401,7 @@ def main():
             mask_flir = mask_flir.astype(np.uint8) * 255
             
             flir_in_event_view = cv2.bitwise_and(flir_in_event_view, flir_in_event_view, mask=mask_flir)
-            cv2.imwrite(f'projection_outputs/flir_to_event/{subdir}/{i:04d}.png', flir_in_event_view)
+            cv2.imwrite(f'projection_outputs/flir/{subdir}/{i+1:04d}.png', flir_in_event_view)
 
             # === 处理 Thermal -> FLIR -> Event ===
             I_thermal = cv2.imread(thermal_files[i], cv2.IMREAD_GRAYSCALE)
@@ -400,7 +430,7 @@ def main():
             mask_t2f = mask_t2f.astype(np.uint8) * 255
             
             thermal_in_flir_view = cv2.bitwise_and(thermal_in_flir_view, thermal_in_flir_view, mask=mask_t2f)
-            cv2.imwrite(f'projection_outputs/thermal_to_flir/{subdir}/{i:04d}.png', thermal_in_flir_view)
+            cv2.imwrite(f'projection_outputs/thermal_to_flir/{subdir}/{i+1:04d}.png', thermal_in_flir_view)
             
             # 步骤2: (Thermal->FLIR) -> Event with 人为平移
             shift_x = -150  # 可调整的平移参数
@@ -419,7 +449,7 @@ def main():
             
             thermal_in_event_view = cv2.bitwise_and(thermal_flir_in_event_view, thermal_flir_in_event_view, mask=mask_flir)
             
-            cv2.imwrite(f'projection_outputs/thermal_to_event/{subdir}/{i:04d}.png', thermal_in_event_view)
+            cv2.imwrite(f'projection_outputs/thermal/{subdir}/{i+1:04d}.png', thermal_in_event_view)
 
             # === 保存Event帧 ===
             if i < len(event_frames):
@@ -435,18 +465,18 @@ def main():
             overlay_all[:, :, 2] = flir_in_event_view      # 红色通道：FLIR -> Event
             overlay_all[:, :, 1] = thermal_in_event_view   # 绿色通道：Thermal -> Event
             overlay_all[:, :, 0] = cv2.cvtColor(event_frame, cv2.COLOR_BGR2GRAY)  # 蓝色通道：Event
-            cv2.imwrite(f'projection_outputs/overlay_all/{subdir}/{i:04d}.png', overlay_all)
+            cv2.imwrite(f'projection_outputs/overlay_all/{subdir}/{i+1:04d}.png', overlay_all)
             
             # 2. FLIR + Event 叠加 (参考projection_f2e_overlay.py)
             flir_bgr = cv2.cvtColor(flir_in_event_view, cv2.COLOR_GRAY2BGR)
             overlay_flir_event = cv2.addWeighted(flir_bgr, 0.3, event_frame, 0.7, 0)
-            cv2.imwrite(f'projection_outputs/overlay_flir_event/{subdir}/{i:04d}.png', overlay_flir_event)
+            cv2.imwrite(f'projection_outputs/overlay_flir_event/{subdir}/{i+1:04d}.png', overlay_flir_event)
 
     print("\n处理完成！结果已保存到 projection_outputs 文件夹")
     print("- flir_to_event/: FLIR图像投影到Event视角")
-    print("- thermal_to_flir/: Thermal图像投影到FLIR视角")
+    print("- thermal_to_flir/: Thermal图像投影到FLIR视角")  
     print("- thermal_to_event/: Thermal图像投影到Event视角")
-    print("- event/: Event帧")
+    print("- event/: Event帧 + 原始Event数据文件")
     print("- overlay_all/: FLIR(红)+Thermal(绿)+Event(蓝)叠加")
     print("- overlay_flir_event/: FLIR+Event加权叠加")
 
